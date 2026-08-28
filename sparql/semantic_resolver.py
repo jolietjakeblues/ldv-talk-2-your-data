@@ -60,11 +60,11 @@ WHERE {{
 
 
 def _find_longest(question: str, terms: tuple[tuple[str, str], ...]) -> tuple[str, str] | None:
-    normalised_question = f" {_normalise(question)} "
+    normalised_question = _normalise(question)
     matches = [
         (label, uri)
         for label, uri in terms
-        if f" {_normalise(label)} " in normalised_question
+        if re.search(rf"(?<!\w){re.escape(_normalise(label))}(?!\w)", normalised_question)
     ]
     return max(matches, key=lambda item: len(_normalise(item[0]))) if matches else None
 

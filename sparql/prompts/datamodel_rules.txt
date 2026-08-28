@@ -74,7 +74,6 @@ Gebruik nooit:
 - ceox:heeftProvincie
 - ceox:heeftAdresgegevens
 - ceo:heeftPlaats
-- ceo:heeftGemeente
 - ceo:heeftAdres
 - ceo:heeftArchitect
 - ceo:heeftFunctie
@@ -145,13 +144,26 @@ Gebruik:
 ?cho ceo:heeftBasisregistratieRelatie ?relatie .
 ?relatie ceo:heeftProvincie <PROVINCIE_URI> .
 
-Gemeente loopt via BRKRelatie:
+Gemeente loopt via ceo:heeftGemeente op BasisregistratieRelatie, met de
+gemeente als OWMS-URI (net als provincie), niet als los tekstveld:
+
+?cho ceo:heeftBasisregistratieRelatie ?relatie .
+?relatie ceo:heeftGemeente <GEMEENTE_URI> .
+
+Is de gemeente-URI al opgelost (zie OPGELOSTE BEGRIPPEN in de vraagcontext)?
+Gebruik dan altijd die exacte URI. Verzin geen eigen URI en filter niet op
+tekst.
+
+Is er geen opgeloste URI beschikbaar (bv. beschrijvende of onduidelijke
+plaatsnaam) en moet je op naam filteren? Gebruik dan als terugvaloptie
+BRK/gemeentenaam met CONTAINS/LCASE:
 
 ?cho ceo:heeftBasisregistratieRelatie ?relatie .
 ?relatie ceo:heeftBRKRelatie ?brk .
 ?brk ceo:gemeentenaam ?gemeente .
+FILTER(CONTAINS(LCASE(STR(?gemeente)), "zoekterm"))
 
-Voor gewone gemeentevragen gebruik je BRK/gemeentenaam, niet BAG/woonplaatsnaam.
+Gebruik voor gewone gemeentevragen nooit BAG/woonplaatsnaam.
 
 Adres en woonplaats lopen via BAGRelatie:
 
@@ -160,15 +172,18 @@ Adres en woonplaats lopen via BAGRelatie:
 OPTIONAL { ?bag ceo:woonplaatsnaam ?woonplaats . }
 OPTIONAL { ?bag ceo:volledigAdres ?adres . }
 
-GEMEENTE EN ADRES SAMEN (BRK + BAG)
+MEERDERE MULTI-VALUED PADEN SAMEN (bv. BRK + BAG)
 
-Combineer een gemeentefilter (BRK) nooit rechtstreeks met een los OPTIONAL
-adrespad (BAG) onder dezelfde ?relatie. Een object kan meerdere BAGRelaties
-of meerdere volledigAdres-waarden hebben (bv. meerdere verblijfsobjecten of
-adresvarianten op één monument). Twee multi-valued paden naast elkaar geven
-dan een cartesisch product: hetzelfde hoofdobject komt meerdere keren terug,
-één rij per adresvariant, en LIMIT raakt daardoor op aan dubbels in plaats
-van aan echte, verschillende hoofdobjecten.
+ceo:heeftBRKRelatie (percelen) en ceo:heeftBAGRelatie/volledigAdres (adressen)
+kunnen allebei meerdere waarden per hoofdobject hebben (bv. meerdere
+verblijfsobjecten of adresvarianten op één monument). Combineer twee zulke
+multi-valued paden nooit als platte joins onder dezelfde ?relatie: dat geeft
+een cartesisch product. Hetzelfde hoofdobject komt dan meerdere keren terug,
+één rij per combinatie, en LIMIT raakt op aan dubbels in plaats van aan
+echte, verschillende hoofdobjecten.
+(ceo:heeftGemeente is zelf single-valued per BasisregistratieRelatie en geeft
+dit probleem niet; dit gaat specifiek over BRK-percelen samen met BAG-adressen,
+of andere combinaties van twee multi-valued paden.)
 
 Fout (cartesisch product):
 ?rm ceo:heeftBasisregistratieRelatie ?relatie .
@@ -180,7 +195,7 @@ OPTIONAL {
   ?bag ceo:volledigAdres ?adres .
 }
 
-Goed (adres eerst herleiden tot één waarde per hoofdobject via een subquery):
+Goed (het tweede pad eerst herleiden tot één waarde per hoofdobject via een subquery):
 ?rm ceo:heeftBasisregistratieRelatie ?relatie .
 ?relatie ceo:heeftBRKRelatie ?brk .
 ?brk ceo:gemeentenaam ?gemeente .
@@ -193,11 +208,9 @@ OPTIONAL {
   } GROUP BY ?rm
 }
 
-Dezelfde regel geldt voor elke combinatie van twee multi-valued paden onder
-hetzelfde hoofdobject (bv. BRK-percelen samen met BAG-adressen, of meerdere
-functies samen met meerdere types): zet ze nooit als platte joins naast
-elkaar. Aggregeer het tweede pad in een subquery met GROUP BY en SAMPLE (of
-GROUP_CONCAT als alle waarden nodig zijn), in plaats van het los te joinen.
+Aggregeer het tweede multi-valued pad in een subquery met GROUP BY en SAMPLE
+(of GROUP_CONCAT als alle waarden nodig zijn), in plaats van het los te
+joinen naast een ander multi-valued pad.
 
 PROVINCIE URI'S
 

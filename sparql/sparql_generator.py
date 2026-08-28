@@ -8,6 +8,8 @@ from pathlib import Path
 
 import config
 from sparql.postprocess import postprocess, has_count
+from sparql.semantic_resolver import build_semantic_context, resolve_question
+from sparql.semantic_validator import validate_semantics
 
 logger = logging.getLogger(__name__)
 
@@ -132,21 +134,39 @@ def generate(question: str, mode: str) -> str:
 
     system_prompt = _build_system_prompt(mode)
 
+    resolved_terms = resolve_question(question)
+    semantic_context = build_semantic_context(resolved_terms)
+    prompt_input = f"{question}\n\n{semantic_context}" if semantic_context else question
+
     logger.info(
         "Query genereren via %s (modus: %s)",
         config.LLM_PROVIDER,
         mode,
     )
 
-    query = _generate(question, system_prompt)
+    query = _generate(prompt_input, system_prompt)
     query = postprocess(query, mode)
 
     if mode == "lijst" and has_count(query):
         logger.warning("LLM genereerde COUNT in lijstmodus — correctie-aanroep")
 
         corrected = (
-            question
+            prompt_input
             + " (geef een lijst van individuele resultaten, geen telling)"
+        )
+
+        query = _generate(corrected, system_prompt)
+        query = postprocess(query, mode)
+
+    semantic_errors = validate_semantics(question, query, resolved_terms)
+
+    if semantic_errors:
+        logger.warning("Semantische validatie gaf correcties: %s", semantic_errors)
+
+        corrected = (
+            prompt_input
+            + "\n\nCORRIGEER DE VORIGE QUERY:\n- "
+            + "\n- ".join(semantic_errors)
         )
 
         query = _generate(corrected, system_prompt)
