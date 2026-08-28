@@ -208,7 +208,4 @@ def postprocess(query: str, mode: str) -> str:
     query = fix_label_filter(query)
     query = inject_prefixes(query)
 
-    if mode == "lijst":
-        query = remove_limit(query)
-
     return query
