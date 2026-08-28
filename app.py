@@ -207,9 +207,37 @@ def execute_sparql():
         return jsonify({"error": str(exc)}), 400
 
     except requests.exceptions.Timeout:
+        if sparql_executor.has_spatial_filter(query):
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "De ruimtelijke vergelijking (binnen een gezicht/gebied) "
+                            "kostte te veel tijd, ook na een lokale herberekening. "
+                            "Probeer de vraag specifieker te maken, bijvoorbeeld met "
+                            "één gezicht of gemeente tegelijk."
+                        )
+                    }
+                ),
+                504,
+            )
         return jsonify({"error": "Endpoint timeout (>30s)"}), 504
 
     except requests.exceptions.HTTPError as e:
+        if sparql_executor.is_spatial_error(e) and sparql_executor.has_spatial_filter(query):
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "De ruimtelijke vergelijking (binnen een gezicht/gebied) "
+                            "faalde door een fout in de brongeometrie, ook na een "
+                            "lokale herberekening. Probeer de vraag specifieker te "
+                            "maken, bijvoorbeeld met één gezicht of gemeente tegelijk."
+                        )
+                    }
+                ),
+                502,
+            )
         return (
             jsonify(
                 {

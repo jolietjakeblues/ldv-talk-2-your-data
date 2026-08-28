@@ -6,3 +6,4 @@ python-dotenv>=1.0
 google-generativeai>=0.7
 ollama>=0.4.0
 gunicorn>=22.0
+shapely>=2.0

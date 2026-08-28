@@ -33,7 +33,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
 SPARQL_ENDPOINT = os.getenv(
     "SPARQL_ENDPOINT",
-    "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/cho/services/cho/sparql",
+    "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/cho/sparql",
 )
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-pro")

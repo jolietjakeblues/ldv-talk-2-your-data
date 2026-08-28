@@ -1,11 +1,15 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import requests
 
 os.environ.setdefault("LLM_PROVIDER", "ollama")
 
 import config
 from answer import answer_generator
+from sparql import executor as sparql_executor
+from sparql import spatial
 from sparql.executor import _validate_read_query
 from sparql.postprocess import inject_prefixes
 from sparql.semantic_resolver import ResolvedTerm, _find_longest
@@ -67,6 +71,83 @@ class SemanticValidatorTests(unittest.TestCase):
         query = "?relatie ceo:heeftGemeente <http://standaarden.overheid.nl/owms/terms/Amsterdam> ."
         errors = validate_semantics("... Amsterdam?", query, self.terms)
         self.assertEqual(errors, [])
+
+
+class SpatialFallbackTests(unittest.TestCase):
+    def test_self_intersecting_polygon_is_repaired(self):
+        bowtie = "POLYGON((0 0, 2 2, 2 0, 0 2, 0 0))"
+        geom = spatial._parse_geometry(bowtie)
+        self.assertIsNotNone(geom)
+        self.assertTrue(geom.is_valid)
+
+    def test_unparseable_wkt_returns_none(self):
+        self.assertIsNone(spatial._parse_geometry("NOT WKT AT ALL"))
+
+    def test_apply_spatial_filter_keeps_only_matching_rows(self):
+        data = {
+            "head": {"vars": ["rm", "rmWkt", "gezicht", "gezichtWkt"]},
+            "results": {"bindings": [
+                {
+                    "rm": {"value": "http://x/rm/1"},
+                    "rmWkt": {"value": "POINT(5.05 52.1)"},
+                    "gezicht": {"value": "http://x/gz/1"},
+                    "gezichtWkt": {"value": "POLYGON((5 52, 5 52.2, 5.1 52.2, 5.1 52, 5 52))"},
+                },
+                {
+                    "rm": {"value": "http://x/rm/2"},
+                    "rmWkt": {"value": "POINT(6 53)"},
+                    "gezicht": {"value": "http://x/gz/1"},
+                    "gezichtWkt": {"value": "POLYGON((5 52, 5 52.2, 5.1 52.2, 5.1 52, 5 52))"},
+                },
+            ]},
+        }
+        result = spatial.apply_spatial_filter(data, "sfWithin", "rmWkt", "gezichtWkt")
+        kept = [row["rm"]["value"] for row in result["results"]["bindings"]]
+        self.assertEqual(kept, ["http://x/rm/1"])
+
+    def test_executor_falls_back_to_local_join_on_topology_exception(self):
+        query = (
+            "SELECT ?rm ?rmWkt ?gezicht ?gezichtWkt WHERE { "
+            "FILTER(geof:sfWithin(?rmWkt, ?gezichtWkt)) }"
+        )
+        fallback_json = {
+            "head": {"vars": ["rm", "rmWkt", "gezicht", "gezichtWkt"]},
+            "results": {"bindings": [
+                {
+                    "rm": {"value": "http://x/rm/1"},
+                    "rmWkt": {"value": "POINT(5.05 52.1)"},
+                    "gezicht": {"value": "http://x/gz/1"},
+                    "gezichtWkt": {"value": "POLYGON((5 52, 5 52.2, 5.1 52.2, 5.1 52, 5 52))"},
+                },
+            ]},
+        }
+        calls = {"n": 0}
+
+        def fake_run(_query):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                response = MagicMock()
+                response.text = "TopologyException: side location conflict"
+                raise requests.exceptions.HTTPError(response=response)
+            return fallback_json
+
+        with patch.object(sparql_executor, "_run", side_effect=fake_run):
+            result = sparql_executor.execute(query)
+
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(len(result["results"]["bindings"]), 1)
+
+    def test_executor_reraises_non_spatial_http_error(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+
+        def fake_run(_query):
+            response = MagicMock()
+            response.text = "internal server error"
+            raise requests.exceptions.HTTPError(response=response)
+
+        with patch.object(sparql_executor, "_run", side_effect=fake_run):
+            with self.assertRaises(requests.exceptions.HTTPError):
+                sparql_executor.execute(query)
 
 
 class AnswerTests(unittest.TestCase):
