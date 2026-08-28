@@ -51,8 +51,9 @@ SELECT (COUNT(DISTINCT ?hoofdobject) AS ?aantal)
 SELECT ?kenmerk (COUNT(DISTINCT ?hoofdobject) AS ?aantal)
 
 GEMEENTE EN PROVINCIE:
-- Gebruik bij gewone gemeentevragen BRK/gemeentenaam.
-- Gebruik BAG/woonplaatsnaam alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
+- Gebruik voor niet-archeologische objecten (bv. rijksmonumenten) bij gemeentevragen ceo:heeftGemeente met de opgeloste OWMS-URI (zie BASISREGISTRATIE EN LOCATIE in datamodel_rules.txt). Gebruik BRK/gemeentenaam alleen als terugvaloptie zonder opgeloste URI.
+- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen altijd BAG/woonplaatsnaam, nooit ceo:heeftGemeente: die wijst naar de huidige gemeente na eventuele herindeling, terwijl een vraag vaak de oude, lokale plaatsnaam gebruikt (bv. Nuth, dat in 2019 opging in Beekdaelen).
+- Gebruik BAG/woonplaatsnaam bij niet-archeologische objecten alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
 - Gebruik bij provincievragen de provincie-URI via ceo:heeftBasisregistratieRelatie.
 - Gebruik nooit ?rm ceo:heeftProvincie.
 - Combineer een BRK-gemeentepad nooit rechtstreeks met een los BAG-adrespad in dezelfde query: dat geeft een cartesisch product en dus een opgeblazen telling. COUNT(DISTINCT ?hoofdobject) verbergt dit meestal, maar vermijd de dubbele join toch (zie datamodel_rules.txt, "GEMEENTE EN ADRES SAMEN").
@@ -77,7 +78,7 @@ ROMEINSE VONDSTEN:
 - Gebruik datering via ceo:heeftGebeurtenis en ceo:heeftDatering.
 - Zoek periode via skos:prefLabel.
 - Filter op "romeinse" met CONTAINS.
-- Gebruik bij plaatsvragen de locatie van de vondstlocatie via BAG/woonplaatsnaam, tenzij de vraag expliciet gemeente zegt.
+- Gebruik bij plaatsvragen altijd de locatie van de vondstlocatie via BAG/woonplaatsnaam (zie GEMEENTE EN PROVINCIE hierboven) — ook als de vraag het woord "gemeente" gebruikt, want de genoemde plaats is vaak een voormalige gemeente die niet meer als zodanig in de data staat.
 
 GEOMETRISCHE TELLINGEN:
 - Gebruik geof:sfWithin of geof:sfIntersects alleen bij ruimtelijke relaties.

@@ -72,6 +72,44 @@ class SemanticValidatorTests(unittest.TestCase):
         errors = validate_semantics("... Amsterdam?", query, self.terms)
         self.assertEqual(errors, [])
 
+    def test_archaeological_query_with_heeftgemeente_is_rejected(self):
+        # ceo:heeftGemeente wijst naar de HUIDIGE gemeente; voormalige
+        # gemeenten (bv. Nuth, opgegaan in Beekdaelen) matchen dan niet.
+        terms = [
+            ResolvedTerm(
+                kind="gemeente",
+                label="Nuth",
+                uri="http://standaarden.overheid.nl/owms/terms/Nuth_(gemeente)",
+            )
+        ]
+        query = (
+            "?vondst a ceo:Vondsten . ?vondst ceo:ligtInObject ?locatie . "
+            "?locatie a ceo:Vondstlocatie . "
+            "?locatie ceo:heeftBasisregistratieRelatie ?relatie . "
+            "?relatie ceo:heeftGemeente <http://standaarden.overheid.nl/owms/terms/Nuth_(gemeente)> ."
+        )
+        errors = validate_semantics("Welke romeinse vondsten liggen in Nuth?", query, terms)
+        self.assertTrue(errors)
+
+    def test_archaeological_query_with_woonplaatsnaam_passes(self):
+        terms = [
+            ResolvedTerm(
+                kind="gemeente",
+                label="Nuth",
+                uri="http://standaarden.overheid.nl/owms/terms/Nuth_(gemeente)",
+            )
+        ]
+        query = (
+            "?vondst a ceo:Vondsten . ?vondst ceo:ligtInObject ?locatie . "
+            "?locatie a ceo:Vondstlocatie . "
+            "?locatie ceo:heeftBasisregistratieRelatie ?relatie . "
+            "?relatie ceo:heeftBAGRelatie ?bag . "
+            "?bag ceo:woonplaatsnaam ?woonplaats . "
+            'FILTER(CONTAINS(LCASE(STR(?woonplaats)), "nuth"))'
+        )
+        errors = validate_semantics("Welke romeinse vondsten liggen in Nuth?", query, terms)
+        self.assertEqual(errors, [])
+
 
 class SpatialFallbackTests(unittest.TestCase):
     def test_self_intersecting_polygon_is_repaired(self):

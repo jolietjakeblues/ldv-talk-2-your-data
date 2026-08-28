@@ -16,10 +16,39 @@ def requested_limit(question: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# Archeologische classes: ceo:heeftGemeente wijst naar de HUIDIGE gemeente,
+# terwijl vragen over deze objecten vaak een voormalige gemeente of
+# dorpsnaam noemen (bv. Nuth, dat in 2019 opging in Beekdaelen). Voor deze
+# classes is BAG/woonplaatsnaam het juiste pad, niet de opgeloste
+# gemeente-URI (zie GEMEENTE EN PROVINCIE in lijst.txt/telling.txt).
+ARCHAEOLOGICAL_CLASS_MARKERS = (
+    "ceo:vondsten", "ceo:vondstlocatie", "ceo:grondsporen",
+    "ceo:archeologischcomplex", "ceo:archeologischterrein",
+    "ceo:archeologischonderzoeksgebied",
+)
+
+
+def _is_archaeological_query(query: str) -> bool:
+    lowered = query.lower()
+    return any(marker in lowered for marker in ARCHAEOLOGICAL_CLASS_MARKERS)
+
+
 def validate_semantics(question: str, query: str, terms: list[ResolvedTerm]) -> list[str]:
     errors: list[str] = []
     lowered = query.lower()
+    archaeological = _is_archaeological_query(query)
+
     for term in terms:
+        if term.kind == "gemeente" and archaeological:
+            if "ceo:heeftgemeente" in lowered and "woonplaatsnaam" not in lowered:
+                errors.append(
+                    "Dit is een archeologische vraag met een plaatsnaam; gebruik "
+                    "BAG/woonplaatsnaam in plaats van ceo:heeftGemeente. De "
+                    "genoemde plaats kan een voormalige gemeente zijn die na een "
+                    "herindeling niet meer als zodanig in de data staat."
+                )
+            continue
+
         if f"<{term.uri}>" not in query:
             errors.append(f'Gebruik de opgeloste {term.kind}-URI <{term.uri}>.')
         required = "ceo:heeftGemeente" if term.kind == "gemeente" else "ceo:heeftProvincie"

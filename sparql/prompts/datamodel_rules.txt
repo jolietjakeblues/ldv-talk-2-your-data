@@ -154,6 +154,23 @@ Is de gemeente-URI al opgelost (zie OPGELOSTE BEGRIPPEN in de vraagcontext)?
 Gebruik dan altijd die exacte URI. Verzin geen eigen URI en filter niet op
 tekst.
 
+BELANGRIJKE UITZONDERING — voormalige gemeenten (gemeentelijke herindeling):
+ceo:heeftGemeente wijst naar de HUIDIGE gemeente, ook als de brondata over
+een gebeurtenis van vóór een herindeling gaat. Een voormalige gemeentenaam
+(bv. Nuth, dat in 2019 opging in Beekdaelen) heeft in de RCE-data dus geen
+ceo:heeftGemeente-match meer, ook al bestaat de OWMS-URI voor die naam nog
+gewoon. BAG/woonplaatsnaam behoudt wel de oude, lokale plaatsnaam. Noemt de
+vraag een plaatsnaam die een dorp/voormalige gemeente kan zijn in plaats van
+een huidige gemeente (dit is bij archeologische objecten — vondsten,
+vondstlocaties, grondsporen, archeologische terreinen/complexen/
+onderzoeksgebieden — het gebruikelijke geval), gebruik dan BAG/woonplaatsnaam
+met CONTAINS/LCASE in plaats van ceo:heeftGemeente:
+
+?cho ceo:heeftBasisregistratieRelatie ?relatie .
+?relatie ceo:heeftBAGRelatie ?bag .
+?bag ceo:woonplaatsnaam ?woonplaats .
+FILTER(CONTAINS(LCASE(STR(?woonplaats)), "zoekterm"))
+
 Is er geen opgeloste URI beschikbaar (bv. beschrijvende of onduidelijke
 plaatsnaam) en moet je op naam filteren? Gebruik dan als terugvaloptie
 BRK/gemeentenaam met CONTAINS/LCASE:
@@ -163,7 +180,9 @@ BRK/gemeentenaam met CONTAINS/LCASE:
 ?brk ceo:gemeentenaam ?gemeente .
 FILTER(CONTAINS(LCASE(STR(?gemeente)), "zoekterm"))
 
-Gebruik voor gewone gemeentevragen nooit BAG/woonplaatsnaam.
+Gebruik voor gewone gemeentevragen over niet-archeologische objecten (bv.
+rijksmonumenten) geen BAG/woonplaatsnaam, tenzij de vraag expliciet naar
+woonplaats, adres of straat vraagt.
 
 Adres en woonplaats lopen via BAGRelatie:
 

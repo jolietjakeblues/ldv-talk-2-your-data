@@ -54,8 +54,9 @@ SELECT-RICHTLIJNEN:
 - Gebruik ORDER BY alleen als de gebruiker vraagt om sortering, nieuwste, oudste, grootste, meeste, minste of top.
 
 GEMEENTE EN PROVINCIE:
-- Gebruik bij gewone gemeentevragen BRK/gemeentenaam.
-- Gebruik BAG/woonplaatsnaam alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
+- Gebruik voor niet-archeologische objecten (bv. rijksmonumenten) bij gemeentevragen ceo:heeftGemeente met de opgeloste OWMS-URI (zie BASISREGISTRATIE EN LOCATIE in datamodel_rules.txt). Gebruik BRK/gemeentenaam alleen als terugvaloptie zonder opgeloste URI.
+- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen altijd BAG/woonplaatsnaam, ook als de vraag het woord "gemeente" gebruikt: ceo:heeftGemeente wijst naar de huidige gemeente na eventuele herindeling, terwijl de genoemde plaats vaak een voormalige gemeente is die niet meer als zodanig in de data staat (bv. Nuth, dat in 2019 opging in Beekdaelen).
+- Gebruik BAG/woonplaatsnaam bij niet-archeologische objecten alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
 - Gebruik bij provincievragen de provincie-URI via ceo:heeftBasisregistratieRelatie.
 - Gebruik nooit ?rm ceo:heeftProvincie.
 - Vraagt de gebruiker om gemeente EN adres in dezelfde query? Combineer het BRK-gemeentepad dan nooit rechtstreeks met een los OPTIONAL BAG-adrespad: dat geeft een cartesisch product (dubbele rijen per adresvariant). Gebruik het subquery-patroon (SAMPLE + GROUP BY ?rm) uit datamodel_rules.txt onder "GEMEENTE EN ADRES SAMEN (BRK + BAG)".
