@@ -9,7 +9,7 @@ from pathlib import Path
 import config
 from sparql.postprocess import postprocess, has_count
 from sparql.semantic_resolver import build_semantic_context, resolve_question
-from sparql.semantic_validator import validate_semantics
+from sparql.semantic_validator import validate_completeness, validate_semantics
 
 logger = logging.getLogger(__name__)
 
@@ -159,14 +159,16 @@ def generate(question: str, mode: str) -> str:
         query = postprocess(query, mode)
 
     semantic_errors = validate_semantics(question, query, resolved_terms)
+    completeness_errors = validate_completeness(question, query)
+    all_errors = semantic_errors + completeness_errors
 
-    if semantic_errors:
-        logger.warning("Semantische validatie gaf correcties: %s", semantic_errors)
+    if all_errors:
+        logger.warning("Validatie gaf correcties: %s", all_errors)
 
         corrected = (
             prompt_input
-            + "\n\nCORRIGEER DE VORIGE QUERY:\n- "
-            + "\n- ".join(semantic_errors)
+            + "\n\nCORRIGEER DE VORIGE QUERY, DEZE MISTE ONDERDELEN UIT DE VRAAG:\n- "
+            + "\n- ".join(all_errors)
         )
 
         query = _generate(corrected, system_prompt)

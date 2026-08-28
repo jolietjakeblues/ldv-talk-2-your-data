@@ -3,11 +3,14 @@ Nabewerking van gegenereerde SPARQL queries.
 
 Verantwoordelijkheden:
 - Verplichte prefixen injecteren als ze ontbreken
-- LIMIT verwijderen uit lijstqueries
 - COUNT detecteren in lijstmodus
 - Provincie-filterpad normaliseren naar directe URI match
 - LCASE = vervangen door CONTAINS
 - heeftProvincie zonder prefLabel-pad corrigeren
+
+LIMIT wordt bewust NIET verwijderd: lijstqueries houden hun LIMIT (default
+20, zie lijst.txt) zodat een vraag niet per ongeluk de volledige dataset
+opvraagt en het endpoint of de rate-limited API zwaar belast.
 """
 
 import re
@@ -56,11 +59,6 @@ def inject_prefixes(query: str) -> str:
         return "\n".join(additions) + "\n\n" + query
 
     return query
-
-
-def remove_limit(query: str) -> str:
-    """Verwijder LIMIT uit een query (voor lijstvragen)."""
-    return re.sub(r"\s*LIMIT\s+\d+", "", query, flags=re.IGNORECASE).strip()
 
 
 def has_count(query: str) -> bool:
@@ -198,7 +196,6 @@ def postprocess(query: str, mode: str) -> str:
     4. Normaliseer provincie naar URI
     5. Fix label filters
     6. Inject prefixen opnieuw, want fixes kunnen rdfs toevoegen
-    7. Verwijder LIMIT in lijstmodus
     """
     query = query.replace("```sparql", "").replace("```", "").strip()
 

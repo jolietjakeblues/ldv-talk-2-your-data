@@ -1381,7 +1381,17 @@ function copySparql(button) {
   });
 }
 
-function formatValue(val) {
+// Variabelen die het hoofdobject zelf zijn (?rm, ?complex, ...): hun URI
+// eindigt vaak op het CHO-nummer (cultuurhistorisch objectnummer), een
+// intern identificatienummer dat NIET hetzelfde is als bv. het
+// rijksmonumentnummer. Toon die waarde daarom nooit als kaal getal naast
+// een echt nummerveld — dat oogt als een tweede, tegenstrijdig nummer.
+const HOOFDOBJECT_VARS = new Set([
+  'rm', 'complex', 'terrein', 'onderzoeksgebied', 'gezicht',
+  'werelderfgoed', 'locatie', 'vondst', 'grondspoor', 'cho',
+]);
+
+function formatValue(val, varName) {
   if (!val) return '—';
 
   const v = String(val.value ?? '');
@@ -1391,6 +1401,10 @@ function formatValue(val) {
   }
 
   if (v.startsWith('http://') || v.startsWith('https://')) {
+    if (varName && HOOFDOBJECT_VARS.has(varName)) {
+      return `<a href="${escapeHTML(v)}" target="_blank" rel="noopener" title="${escapeHTML(v)}">bron ↗</a>`;
+    }
+
     const parts = v.split(/[\/#]/).filter(Boolean);
     const short = parts[parts.length - 1] || v;
 
@@ -1432,7 +1446,7 @@ function renderResultCards(bindings, vars) {
       .map(v => `
         <div class="result-field">
           <dt>${escapeHTML(v)}</dt>
-          <dd>${formatValue(row[v])}</dd>
+          <dd>${formatValue(row[v], v)}</dd>
         </div>
       `)
       .join('');
@@ -1453,7 +1467,7 @@ function renderTable(bindings, vars) {
     const rowClass = isUncertain(row) ? ' class="row-uncertain"' : '';
 
     return '<tr' + rowClass + '>' +
-      vars.map(v => '<td>' + formatValue(row[v]) + '</td>').join('') +
+      vars.map(v => '<td>' + formatValue(row[v], v) + '</td>').join('') +
       '</tr>';
   }).join('');
 
@@ -1665,7 +1679,7 @@ function popupForRow(row, vars) {
   const fields = vars
     .filter(v => row[v] && row[v].value && !geometryVars.includes(v))
     .slice(0, 6)
-    .map(v => `<div><strong>${escapeHTML(v)}:</strong> ${formatValue(row[v])}</div>`)
+    .map(v => `<div><strong>${escapeHTML(v)}:</strong> ${formatValue(row[v], v)}</div>`)
     .join('');
 
   return `<strong>${title}</strong>${fields ? '<hr>' + fields : ''}`;
