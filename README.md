@@ -85,8 +85,7 @@ Ondersteunde objecttypen:
 
 ```text
 frontend/
-  index.html                 — basisinterface met kaartweergave
-  index_with_map.html        — losse variant met Leaflet kaart
+  index.html                 — interface met kaartweergave (enige frontend, geserveerd door Flask)
   vendor/leaflet/             — gevendorde Leaflet-assets
 
 answer/
