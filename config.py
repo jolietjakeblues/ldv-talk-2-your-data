@@ -40,6 +40,12 @@ GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-pro")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
+# Bescherming tegen misbruik van de (betaalde) LLM-provider en het endpoint
+MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "500"))
+APP_ACCESS_CODE = os.getenv("APP_ACCESS_CODE", "")
+RATE_LIMIT_LLM = os.getenv("RATE_LIMIT_LLM", "10/minute;100/day")
+RATE_LIMIT_SPARQL = os.getenv("RATE_LIMIT_SPARQL", "30/minute;300/day")
+
 
 def active_api_key() -> str:
     """Geef de API-key van de actieve provider terug; Ollama heeft geen key."""

@@ -55,6 +55,7 @@ GEMEENTE EN PROVINCIE:
 - Gebruik BAG/woonplaatsnaam alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
 - Gebruik bij provincievragen de provincie-URI via ceo:heeftBasisregistratieRelatie.
 - Gebruik nooit ?rm ceo:heeftProvincie.
+- Combineer een BRK-gemeentepad nooit rechtstreeks met een los BAG-adrespad in dezelfde query: dat geeft een cartesisch product en dus een opgeblazen telling. COUNT(DISTINCT ?hoofdobject) verbergt dit meestal, maar vermijd de dubbele join toch (zie datamodel_rules.txt, "GEMEENTE EN ADRES SAMEN").
 
 FUNCTIE EN TYPE:
 - Gebruik voor functie/type alleen de paden uit datamodel_rules.txt.

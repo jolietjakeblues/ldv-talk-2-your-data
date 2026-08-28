@@ -1903,11 +1903,23 @@ function exportCSV() {
 }
 
 async function postJSON(path, body) {
+  const headers = {'Content-Type': 'application/json'};
+  const accessCode = localStorage.getItem('accessCode');
+  if (accessCode) headers['X-Access-Code'] = accessCode;
+
   const r = await fetch(API + path, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers,
     body: JSON.stringify(body),
   });
+
+  if (r.status === 401) {
+    const entered = window.prompt('Voer de toegangscode in om deze assistent te gebruiken:');
+    if (!entered) throw new Error('Toegangscode vereist');
+
+    localStorage.setItem('accessCode', entered);
+    return postJSON(path, body);
+  }
 
   const d = await r.json();
 

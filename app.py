@@ -12,7 +12,9 @@ import os
 
 import requests
 from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
 from answer import answer_generator
@@ -69,7 +71,36 @@ app = Flask(
     static_url_path="",
 )
 
-CORS(app)
+# De frontend wordt door deze app zelf geserveerd (same-origin fetch), dus
+# CORS voor andere origins is niet nodig en staat expres niet aan.
+
+# Render (en de meeste PaaS-providers) zetten de app achter één reverse
+# proxy; ProxyFix zorgt dat request.remote_addr het echte client-IP is
+# (uit X-Forwarded-For) in plaats van het interne proxy-IP. Zonder dit
+# zou rate limiting per IP feitelijk één gedeelde limiet voor alle
+# bezoekers worden.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
+
+
+@app.errorhandler(429)
+def _rate_limit_exceeded(e):
+    return jsonify({"error": "Te veel verzoeken. Probeer het later opnieuw."}), 429
+
+
+def _access_code_ok() -> bool:
+    """Controleer de optionele toegangscode (APP_ACCESS_CODE)."""
+    if not config.APP_ACCESS_CODE:
+        return True
+    return request.headers.get("X-Access-Code", "") == config.APP_ACCESS_CODE
+
+
+@app.before_request
+def _require_access_code():
+    if request.path.startswith("/api/") and request.path != "/api/health":
+        if not _access_code_ok():
+            return jsonify({"error": "Ongeldige of ontbrekende toegangscode"}), 401
 
 
 def _json_object():
@@ -119,6 +150,7 @@ def detect_mode(question: str) -> str:
 
 
 @app.route("/api/generate-sparql", methods=["POST"])
+@limiter.limit(config.RATE_LIMIT_LLM)
 def generate_sparql():
     """Stap 1: vertaal natuurlijke vraag naar SPARQL."""
 
@@ -129,17 +161,18 @@ def generate_sparql():
     frontend_mode = data.get("mode")
 
     detected_mode = detect_mode(question)
-
-    if detected_mode == "telling":
-        mode = "telling"
-    else:
-        mode = frontend_mode or "lijst"
-
-    if not mode:
-        mode = detect_mode(question)
+    mode = "telling" if detected_mode == "telling" else (frontend_mode or "lijst")
 
     if not question:
         return jsonify({"error": "Geen vraag opgegeven"}), 400
+
+    if len(question) > config.MAX_QUESTION_LENGTH:
+        return (
+            jsonify(
+                {"error": f"Vraag is te lang (max {config.MAX_QUESTION_LENGTH} tekens)."}
+            ),
+            400,
+        )
 
     if mode not in ("lijst", "telling"):
         return jsonify({"error": "Ongeldige modus. Gebruik 'lijst' of 'telling'."}), 400
@@ -154,6 +187,7 @@ def generate_sparql():
 
 
 @app.route("/api/execute-sparql", methods=["POST"])
+@limiter.limit(config.RATE_LIMIT_SPARQL)
 def execute_sparql():
     """Stap 2: voer SPARQL query uit op het RCE endpoint."""
 
@@ -194,6 +228,7 @@ def execute_sparql():
 
 
 @app.route("/api/generate-answer", methods=["POST"])
+@limiter.limit(config.RATE_LIMIT_LLM)
 def generate_answer():
     """Stap 3: vertaal SPARQL resultaten naar leesbaar antwoord."""
 
@@ -201,6 +236,13 @@ def generate_answer():
     if error:
         return error
     question = str(data.get("question") or "").strip()
+    if len(question) > config.MAX_QUESTION_LENGTH:
+        return (
+            jsonify(
+                {"error": f"Vraag is te lang (max {config.MAX_QUESTION_LENGTH} tekens)."}
+            ),
+            400,
+        )
     results = data.get("results", {})
     if not isinstance(results, dict):
         return jsonify({"error": "'results' moet een JSON-object zijn"}), 400

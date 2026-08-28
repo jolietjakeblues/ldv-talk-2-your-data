@@ -160,6 +160,45 @@ Adres en woonplaats lopen via BAGRelatie:
 OPTIONAL { ?bag ceo:woonplaatsnaam ?woonplaats . }
 OPTIONAL { ?bag ceo:volledigAdres ?adres . }
 
+GEMEENTE EN ADRES SAMEN (BRK + BAG)
+
+Combineer een gemeentefilter (BRK) nooit rechtstreeks met een los OPTIONAL
+adrespad (BAG) onder dezelfde ?relatie. Een object kan meerdere BAGRelaties
+of meerdere volledigAdres-waarden hebben (bv. meerdere verblijfsobjecten of
+adresvarianten op één monument). Twee multi-valued paden naast elkaar geven
+dan een cartesisch product: hetzelfde hoofdobject komt meerdere keren terug,
+één rij per adresvariant, en LIMIT raakt daardoor op aan dubbels in plaats
+van aan echte, verschillende hoofdobjecten.
+
+Fout (cartesisch product):
+?rm ceo:heeftBasisregistratieRelatie ?relatie .
+?relatie ceo:heeftBRKRelatie ?brk .
+?brk ceo:gemeentenaam ?gemeente .
+FILTER(CONTAINS(LCASE(STR(?gemeente)), "amsterdam"))
+OPTIONAL {
+  ?relatie ceo:heeftBAGRelatie ?bag .
+  ?bag ceo:volledigAdres ?adres .
+}
+
+Goed (adres eerst herleiden tot één waarde per hoofdobject via een subquery):
+?rm ceo:heeftBasisregistratieRelatie ?relatie .
+?relatie ceo:heeftBRKRelatie ?brk .
+?brk ceo:gemeentenaam ?gemeente .
+FILTER(CONTAINS(LCASE(STR(?gemeente)), "amsterdam"))
+OPTIONAL {
+  SELECT ?rm (SAMPLE(?adresWaarde) AS ?adres) WHERE {
+    ?rm ceo:heeftBasisregistratieRelatie ?relatie2 .
+    ?relatie2 ceo:heeftBAGRelatie ?bag .
+    ?bag ceo:volledigAdres ?adresWaarde .
+  } GROUP BY ?rm
+}
+
+Dezelfde regel geldt voor elke combinatie van twee multi-valued paden onder
+hetzelfde hoofdobject (bv. BRK-percelen samen met BAG-adressen, of meerdere
+functies samen met meerdere types): zet ze nooit als platte joins naast
+elkaar. Aggregeer het tweede pad in een subquery met GROUP BY en SAMPLE (of
+GROUP_CONCAT als alle waarden nodig zijn), in plaats van het los te joinen.
+
 PROVINCIE URI'S
 
 - Drenthe: <http://standaarden.overheid.nl/owms/terms/Drenthe>
