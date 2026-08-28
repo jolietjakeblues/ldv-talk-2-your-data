@@ -1100,6 +1100,15 @@
 
             </div>
           </div>
+
+          <div class="examples hidden" id="historySection">
+            <div class="examples-label" style="display:flex; align-items:center; justify-content:space-between;">
+              <span>Eerder gestelde vragen</span>
+              <button class="secondary-btn" id="clearHistoryBtn" onclick="clearHistory()">wis</button>
+            </div>
+
+            <div class="example-list" id="historyList"></div>
+          </div>
         </div>
       </aside>
 
@@ -1216,6 +1225,7 @@ function renderShell(question, mode) {
       <strong>${escapeHTML(question)}</strong>
       <span>${escapeHTML(mode)}</span>
       <span id="providerBadge">${state.provider ? escapeHTML(state.provider + ' · ' + state.model) : 'model laden'}</span>
+      <button class="secondary-btn" id="shareUrlBtn" onclick="copyShareUrl()">deel link</button>
     </div>
 
     <div class="pipeline">
@@ -1613,6 +1623,17 @@ function unwrapParens(value) {
   return s;
 }
 
+// Strip precies één laag haakjes (niet recursief zoals unwrapParens).
+// Nodig bij MULTIPOLYGON: tussen het polygon-niveau en het ring-niveau moet
+// splitTopLevel() draaien vóór er verder ontrafeld wordt, anders verdwijnen
+// bij een polygon met precies één ring (de normale vorm, zonder gaten) de
+// ring-haakjes ook meteen mee en valt elk coördinatenpaar uit elkaar als
+// aparte "ring" met één punt.
+function stripOuterParens(value) {
+  const s = String(value || '').trim();
+  return (s.startsWith('(') && s.endsWith(')')) ? s.slice(1, -1).trim() : s;
+}
+
 function parseWktToLayers(rawWkt, popupHtml) {
   const wkt = stripCrsFromWkt(rawWkt);
   const typeMatch = wkt.match(/^([A-Z]+)\s*\((.*)\)$/i);
@@ -1662,7 +1683,7 @@ function parseWktToLayers(rawWkt, popupHtml) {
     const polygons = splitTopLevel(body);
 
     polygons.forEach(polyRaw => {
-      const rings = splitTopLevel(unwrapParens(polyRaw));
+      const rings = splitTopLevel(stripOuterParens(polyRaw));
       const latlngs = rings.map(ring => parseCoordList(unwrapParens(ring))).filter(r => r.length);
 
       if (latlngs.length) layers.push(L.polygon(latlngs).bindPopup(popupHtml));
@@ -1849,6 +1870,7 @@ function renderResultsCard(sparqlResults, elapsed) {
           <div class="toolbar-actions">
             <button class="secondary-btn" onclick="toggleTable()">toon tabel</button>
             <button class="secondary-btn" onclick="exportCSV()">exporteer CSV</button>
+            ${hasMapData(bindings, vars) ? '<button class="secondary-btn" onclick="exportGeoJSON()">exporteer GeoJSON</button>' : ''}
           </div>
         </div>
 
@@ -1916,6 +1938,125 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+// GeoJSON gebruikt [lon, lat], in tegenstelling tot Leaflet dat [lat, lon]
+// verwacht — vandaar een eigen coördinaatconversie i.p.v. coordToLatLng.
+function coordToLonLat(pair) {
+  const nums = String(pair || '').trim().split(/\s+/).map(Number).filter(n => !Number.isNaN(n));
+
+  if (nums.length < 2) return null;
+
+  const x = nums[0];
+  const y = nums[1];
+
+  if (x > 10000 && y > 300000) {
+    const [lat, lon] = rdToWgs84(x, y);
+    return [lon, lat];
+  }
+
+  return [x, y];
+}
+
+function parseCoordListLonLat(value) {
+  return String(value || '')
+    .split(',')
+    .map(coordToLonLat)
+    .filter(Boolean);
+}
+
+function parseWktToGeoJSON(rawWkt) {
+  const wkt = stripCrsFromWkt(rawWkt);
+  const typeMatch = wkt.match(/^([A-Z]+)\s*\((.*)\)$/i);
+
+  if (!typeMatch) return null;
+
+  const type = typeMatch[1].toUpperCase();
+  const body = typeMatch[2].trim();
+
+  if (type === 'POINT') {
+    const c = coordToLonLat(body);
+    return c ? {type: 'Point', coordinates: c} : null;
+  }
+
+  if (type === 'MULTIPOINT') {
+    const points = splitTopLevel(unwrapParens(body)).map(p => coordToLonLat(unwrapParens(p))).filter(Boolean);
+    return points.length ? {type: 'MultiPoint', coordinates: points} : null;
+  }
+
+  if (type === 'LINESTRING') {
+    const line = parseCoordListLonLat(body);
+    return line.length ? {type: 'LineString', coordinates: line} : null;
+  }
+
+  if (type === 'MULTILINESTRING') {
+    const lines = splitTopLevel(body)
+      .map(lineRaw => parseCoordListLonLat(unwrapParens(lineRaw)))
+      .filter(line => line.length);
+    return lines.length ? {type: 'MultiLineString', coordinates: lines} : null;
+  }
+
+  if (type === 'POLYGON') {
+    const rings = splitTopLevel(body)
+      .map(ring => parseCoordListLonLat(unwrapParens(ring)))
+      .filter(ring => ring.length);
+    return rings.length ? {type: 'Polygon', coordinates: rings} : null;
+  }
+
+  if (type === 'MULTIPOLYGON') {
+    const polygons = splitTopLevel(body)
+      .map(polyRaw => splitTopLevel(stripOuterParens(polyRaw))
+        .map(ring => parseCoordListLonLat(unwrapParens(ring)))
+        .filter(ring => ring.length))
+      .filter(rings => rings.length);
+    return polygons.length ? {type: 'MultiPolygon', coordinates: polygons} : null;
+  }
+
+  return null;
+}
+
+function exportGeoJSON() {
+  if (!lastBindings.length) return;
+
+  const geometryVars = findGeometryVars(lastVars);
+  const propertyVars = lastVars.filter(v => !geometryVars.includes(v));
+  const features = [];
+
+  lastBindings.forEach(row => {
+    const properties = {};
+
+    propertyVars.forEach(v => {
+      if (row[v] && row[v].value !== undefined) properties[v] = row[v].value;
+    });
+
+    geometryVars.forEach(v => {
+      if (!row[v] || !row[v].value) return;
+
+      const geometry = parseWktToGeoJSON(row[v].value);
+      if (!geometry) return;
+
+      features.push({
+        type: 'Feature',
+        geometry,
+        properties: {...properties, geometrieveld: v},
+      });
+    });
+  });
+
+  if (!features.length) return;
+
+  const collection = {type: 'FeatureCollection', features};
+  const json = JSON.stringify(collection, null, 2);
+  const blob = new Blob([json], {type: 'application/geo+json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeQuestion = lastQuestion.slice(0, 34).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  a.href = url;
+  a.download = 'erfgoed_' + safeQuestion + '.geojson';
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
 async function postJSON(path, body) {
   const headers = {'Content-Type': 'application/json'};
   const accessCode = localStorage.getItem('accessCode');
@@ -1942,6 +2083,117 @@ async function postJSON(path, body) {
   return d;
 }
 
+const HISTORY_KEY = 'searchHistory';
+const HISTORY_MAX = 20;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveToHistory(question, mode) {
+  try {
+    let history = loadHistory();
+    history = history.filter(item => item.question !== question);
+    history.unshift({question, mode, ts: Date.now()});
+    history = history.slice(0, HISTORY_MAX);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    // localStorage kan onbeschikbaar zijn (privénavigatie, volle quota) - negeer stil
+  }
+  renderHistory();
+}
+
+function clearHistory() {
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch (e) {
+    // negeer stil
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  const wrap = document.getElementById('historySection');
+  const container = document.getElementById('historyList');
+  if (!wrap || !container) return;
+
+  const history = loadHistory();
+
+  if (!history.length) {
+    wrap.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  wrap.classList.remove('hidden');
+  container.innerHTML = history.map(item => `
+    <button class="example-pill history-pill" data-question="${escapeHTML(item.question)}" data-mode="${escapeHTML(item.mode)}">${escapeHTML(item.question)}</button>
+  `).join('');
+}
+
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.history-pill');
+  if (!btn) return;
+
+  setQuestion(btn.dataset.question);
+
+  if (btn.dataset.mode === 'telling') {
+    document.getElementById('modeTelling').checked = true;
+  } else {
+    document.getElementById('modeLijst').checked = true;
+  }
+});
+
+function buildShareUrl(question, mode) {
+  const url = new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set('q', question);
+  url.searchParams.set('mode', mode);
+  return url.toString();
+}
+
+function updateAddressBar(question, mode) {
+  try {
+    window.history.replaceState({}, '', buildShareUrl(question, mode));
+  } catch (e) {
+    // negeer stil (bv. sandboxed omgeving zonder History API)
+  }
+}
+
+function copyShareUrl() {
+  const url = buildShareUrl(lastQuestion, lastMode);
+
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('shareUrlBtn');
+    if (!btn) return;
+
+    const old = btn.textContent;
+    btn.textContent = 'link gekopieerd';
+
+    setTimeout(() => {
+      btn.textContent = old;
+    }, 1300);
+  });
+}
+
+function prefillFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get('q');
+  if (!q) return;
+
+  setQuestion(q);
+
+  if (params.get('mode') === 'telling') {
+    document.getElementById('modeTelling').checked = true;
+  } else {
+    document.getElementById('modeLijst').checked = true;
+  }
+}
+
 async function ask() {
   const input = document.getElementById('question');
   const button = document.getElementById('askBtn');
@@ -1956,6 +2208,9 @@ async function ask() {
   lastMode = mode;
   lastBindings = [];
   lastVars = [];
+
+  saveToHistory(q, mode);
+  updateAddressBar(q, mode);
 
   button.disabled = true;
   renderShell(q, mode);
@@ -2028,6 +2283,9 @@ document.getElementById('question').addEventListener('keydown', function(e) {
     ask();
   }
 });
+
+renderHistory();
+prefillFromUrl();
 </script>
 </body>
 </html>
