@@ -72,6 +72,14 @@ app = Flask(
 CORS(app)
 
 
+def _json_object():
+    """Lees een JSON-object of geef een duidelijke 400-respons."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "Verwacht een JSON-object"}), 400)
+    return data, None
+
+
 @app.route("/")
 def index():
     """Serveer de frontend."""
@@ -114,8 +122,10 @@ def detect_mode(question: str) -> str:
 def generate_sparql():
     """Stap 1: vertaal natuurlijke vraag naar SPARQL."""
 
-    data = request.get_json(silent=True) or {}
-    question = (data.get("question") or "").strip()
+    data, error = _json_object()
+    if error:
+        return error
+    question = str(data.get("question") or "").strip()
     frontend_mode = data.get("mode")
 
     detected_mode = detect_mode(question)
@@ -147,8 +157,10 @@ def generate_sparql():
 def execute_sparql():
     """Stap 2: voer SPARQL query uit op het RCE endpoint."""
 
-    data = request.get_json(silent=True) or {}
-    query = (data.get("query") or "").strip()
+    data, error = _json_object()
+    if error:
+        return error
+    query = str(data.get("query") or "").strip()
 
     if not query:
         return jsonify({"error": "Geen query opgegeven"}), 400
@@ -156,6 +168,9 @@ def execute_sparql():
     try:
         results = sparql_executor.execute(query)
         return jsonify(results)
+
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     except requests.exceptions.Timeout:
         return jsonify({"error": "Endpoint timeout (>30s)"}), 504
@@ -182,9 +197,13 @@ def execute_sparql():
 def generate_answer():
     """Stap 3: vertaal SPARQL resultaten naar leesbaar antwoord."""
 
-    data = request.get_json(silent=True) or {}
-    question = data.get("question", "")
+    data, error = _json_object()
+    if error:
+        return error
+    question = str(data.get("question") or "").strip()
     results = data.get("results", {})
+    if not isinstance(results, dict):
+        return jsonify({"error": "'results' moet een JSON-object zijn"}), 400
 
     try:
         answer = answer_generator.generate(question, results)

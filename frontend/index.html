@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RCE Erfgoed Assistent</title>
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 
@@ -861,6 +862,38 @@
     margin-top: 0.8rem;
   }
 
+  .map-card {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    background: var(--white);
+    overflow: hidden;
+  }
+
+  .map-wrap {
+    height: 420px;
+    width: 100%;
+    background: var(--paper-2);
+  }
+
+  .map-note {
+    padding: 0.7rem 0.9rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    border-top: 1px solid var(--border-soft);
+    background: var(--paper);
+  }
+
+  .leaflet-popup-content {
+    font-family: "DM Sans", sans-serif;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .leaflet-popup-content strong {
+    color: var(--accent);
+  }
+
   .results-table {
     width: 100%;
     border-collapse: collapse;
@@ -1062,6 +1095,9 @@
               <button class="example-pill" onclick="setQuestion(this.textContent)">Welke monumenten in Bunnik zijn een kerk?</button>
               <button class="example-pill" onclick="setQuestion(this.textContent)">Welke rijksmonumenten zijn van het type kasteel?</button>
               <button class="example-pill" onclick="setQuestion(this.textContent)">Hoeveel rijksmonumenten per provincie?</button>
+              <button class="example-pill" onclick="setQuestion(this.textContent)">Welke romeinse vondsten liggen in Nuth?</button>
+              <button class="example-pill" onclick="setQuestion(this.textContent)">Welke rijksmonumenten liggen in de gemeente Dordrecht liggen in een gezicht en hebben de functie kerk?</button>
+
             </div>
           </div>
         </div>
@@ -1086,6 +1122,7 @@
   </main>
 </div>
 
+<script src="/vendor/leaflet/leaflet.js"></script>
 <script>
 const API = window.location.origin + '/api';
 
@@ -1094,6 +1131,7 @@ let lastVars = [];
 let lastQuestion = '';
 let lastMode = 'lijst';
 let currentSparqlQuery = '';
+let currentMap = null;
 
 const state = {
   provider: '',
@@ -1320,6 +1358,7 @@ async function runEditedSparql() {
           ${renderResultsCard(sparqlResults, elapsed)}
         </div>
       `;
+      initResultMap(lastBindings, lastVars);
     }
   } catch(e) {
     const card = document.getElementById('manualResultsCard');
@@ -1428,6 +1467,339 @@ function renderTable(bindings, vars) {
   `;
 }
 
+
+
+function findGeometryVars(vars) {
+  return vars.filter(v => {
+    const n = String(v || '').toLowerCase();
+
+    return (
+      n === 'wkt' ||
+      n === 'geometrie' ||
+      n === 'geometry' ||
+      n === 'geo' ||
+      n === 'geom' ||
+      n.includes('wkt') ||
+      n.startsWith('geo')
+    );
+  });
+}
+
+function stripCrsFromWkt(wkt) {
+  return String(wkt || '')
+    .replace(/^<[^>]+>\s*/i, '')
+    .replace(/^SRID=\d+;\s*/i, '')
+    .trim();
+}
+
+function rdToWgs84(x, y) {
+  const dX = (x - 155000) * 1e-5;
+  const dY = (y - 463000) * 1e-5;
+
+  const sumN = (
+    3235.65389 * dY +
+    -32.58297 * Math.pow(dX, 2) +
+    -0.2475 * Math.pow(dY, 2) +
+    -0.84978 * Math.pow(dX, 2) * dY +
+    -0.0655 * Math.pow(dY, 3) +
+    -0.01709 * Math.pow(dX, 2) * Math.pow(dY, 2) +
+    -0.00738 * dX +
+    0.0053 * Math.pow(dX, 4) +
+    -0.00039 * Math.pow(dX, 2) * Math.pow(dY, 3) +
+    0.00033 * Math.pow(dX, 4) * dY +
+    -0.00012 * dX * dY
+  );
+
+  const sumE = (
+    5260.52916 * dX +
+    105.94684 * dX * dY +
+    2.45656 * dX * Math.pow(dY, 2) +
+    -0.81885 * Math.pow(dX, 3) +
+    0.05594 * dX * Math.pow(dY, 3) +
+    -0.05607 * Math.pow(dX, 3) * dY +
+    0.01199 * dY +
+    -0.00256 * Math.pow(dX, 3) * Math.pow(dY, 2) +
+    0.00128 * dX * Math.pow(dY, 4) +
+    0.00022 * Math.pow(dY, 2) +
+    -0.00022 * Math.pow(dX, 2) +
+    0.00026 * Math.pow(dX, 5)
+  );
+
+  const lat = 52.15517440 + sumN / 3600;
+  const lon = 5.38720621 + sumE / 3600;
+
+  return [lat, lon];
+}
+
+function coordToLatLng(pair) {
+  const nums = String(pair || '').trim().split(/\s+/).map(Number).filter(n => !Number.isNaN(n));
+
+  if (nums.length < 2) return null;
+
+  const x = nums[0];
+  const y = nums[1];
+
+  if (x > 10000 && y > 300000) {
+    return rdToWgs84(x, y);
+  }
+
+  return [y, x];
+}
+
+function splitTopLevel(value) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+
+    if (c === '(') depth++;
+    if (c === ')') depth--;
+
+    if (c === ',' && depth === 0) {
+      parts.push(value.slice(start, i));
+      start = i + 1;
+    }
+  }
+
+  parts.push(value.slice(start));
+
+  return parts.map(p => p.trim()).filter(Boolean);
+}
+
+function parseCoordList(value) {
+  return String(value || '')
+    .split(',')
+    .map(coordToLatLng)
+    .filter(Boolean);
+}
+
+function unwrapParens(value) {
+  let s = String(value || '').trim();
+
+  while (s.startsWith('(') && s.endsWith(')')) {
+    let depth = 0;
+    let valid = true;
+
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '(') depth++;
+      if (s[i] === ')') depth--;
+
+      if (depth === 0 && i < s.length - 1) {
+        valid = false;
+        break;
+      }
+    }
+
+    if (!valid) break;
+    s = s.slice(1, -1).trim();
+  }
+
+  return s;
+}
+
+function parseWktToLayers(rawWkt, popupHtml) {
+  const wkt = stripCrsFromWkt(rawWkt);
+  const typeMatch = wkt.match(/^([A-Z]+)\s*\((.*)\)$/i);
+
+  if (!typeMatch || typeof L === 'undefined') return [];
+
+  const type = typeMatch[1].toUpperCase();
+  const body = typeMatch[2].trim();
+  const layers = [];
+
+  if (type === 'POINT') {
+    const latlng = coordToLatLng(body);
+    if (latlng) layers.push(L.marker(latlng).bindPopup(popupHtml));
+  }
+
+  if (type === 'MULTIPOINT') {
+    const points = splitTopLevel(unwrapParens(body));
+
+    points.forEach(point => {
+      const latlng = coordToLatLng(unwrapParens(point));
+      if (latlng) layers.push(L.marker(latlng).bindPopup(popupHtml));
+    });
+  }
+
+  if (type === 'LINESTRING') {
+    const line = parseCoordList(body);
+    if (line.length) layers.push(L.polyline(line).bindPopup(popupHtml));
+  }
+
+  if (type === 'MULTILINESTRING') {
+    const lines = splitTopLevel(body);
+
+    lines.forEach(lineRaw => {
+      const line = parseCoordList(unwrapParens(lineRaw));
+      if (line.length) layers.push(L.polyline(line).bindPopup(popupHtml));
+    });
+  }
+
+  if (type === 'POLYGON') {
+    const rings = splitTopLevel(body);
+    const latlngs = rings.map(ring => parseCoordList(unwrapParens(ring))).filter(r => r.length);
+
+    if (latlngs.length) layers.push(L.polygon(latlngs).bindPopup(popupHtml));
+  }
+
+  if (type === 'MULTIPOLYGON') {
+    const polygons = splitTopLevel(body);
+
+    polygons.forEach(polyRaw => {
+      const rings = splitTopLevel(unwrapParens(polyRaw));
+      const latlngs = rings.map(ring => parseCoordList(unwrapParens(ring))).filter(r => r.length);
+
+      if (latlngs.length) layers.push(L.polygon(latlngs).bindPopup(popupHtml));
+    });
+  }
+
+  return layers;
+}
+
+function popupForRow(row, vars) {
+  const title = escapeHTML(chooseTitle(row, vars));
+  const geometryVars = findGeometryVars(vars);
+
+  const fields = vars
+    .filter(v => row[v] && row[v].value && !geometryVars.includes(v))
+    .slice(0, 6)
+    .map(v => `<div><strong>${escapeHTML(v)}:</strong> ${formatValue(row[v])}</div>`)
+    .join('');
+
+  return `<strong>${title}</strong>${fields ? '<hr>' + fields : ''}`;
+}
+
+function hasMapData(bindings, vars) {
+  const geometryVars = findGeometryVars(vars);
+
+  if (!geometryVars.length) return false;
+
+  return bindings.some(row =>
+    geometryVars.some(v => row[v] && row[v].value && /POINT|LINESTRING|POLYGON/i.test(row[v].value))
+  );
+}
+
+function renderMapCard(bindings, vars) {
+  if (!hasMapData(bindings, vars)) return '';
+
+  return `
+    <div class="card map-card">
+      <div class="card-header">
+        <span class="card-dot green"></span>
+        <h4>Kaart</h4>
+      </div>
+      <div id="resultMap" class="map-wrap"></div>
+      <div class="map-note">
+        Gezichten en gebieden worden als vlakken getoond. Rijksmonumenten verschijnen als markers wanneer een apart monument-WKT veld aanwezig is.
+      </div>
+    </div>
+  `;
+}
+
+function styleLayerByVar(layer, geometryVar) {
+  const name = String(geometryVar || '').toLowerCase();
+
+  if (!layer.setStyle) return;
+
+  if (name.includes('rm')) {
+    layer.setStyle({
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.45
+    });
+    return;
+  }
+
+  if (name.includes('gezicht') || name.includes('gez') || name === 'wkt') {
+    layer.setStyle({
+      weight: 2,
+      opacity: 0.85,
+      fillOpacity: 0.12
+    });
+    return;
+  }
+
+  layer.setStyle({
+    weight: 2,
+    opacity: 0.9,
+    fillOpacity: 0.25
+  });
+}
+
+function layerToMarkerIfMonument(layer, geometryVar, popupHtml) {
+  const name = String(geometryVar || '').toLowerCase();
+
+  if (!name.includes('rm')) return layer;
+
+  if (layer.getLatLng) {
+    return layer;
+  }
+
+  if (layer.getBounds) {
+    const center = layer.getBounds().getCenter();
+    return L.circleMarker(center, {
+      radius: 6,
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9
+    }).bindPopup(popupHtml);
+  }
+
+  return layer;
+}
+
+function initResultMap(bindings, vars) {
+  const mapEl = document.getElementById('resultMap');
+
+  if (!mapEl || typeof L === 'undefined') return;
+
+  if (currentMap) {
+    currentMap.remove();
+    currentMap = null;
+  }
+
+  currentMap = L.map(mapEl, {
+    scrollWheelZoom: false,
+  }).setView([52.1, 5.3], 7);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(currentMap);
+
+  const geometryVars = findGeometryVars(vars);
+  const group = L.featureGroup().addTo(currentMap);
+
+  bindings.forEach(row => {
+    const popupHtml = popupForRow(row, vars);
+
+    geometryVars.forEach(v => {
+      if (!row[v] || !row[v].value) return;
+
+      const layers = parseWktToLayers(row[v].value, popupHtml);
+
+      layers.forEach(layer => {
+        styleLayerByVar(layer, v);
+
+        const finalLayer = layerToMarkerIfMonument(layer, v, popupHtml);
+        finalLayer.addTo(group);
+      });
+    });
+  });
+
+  if (group.getLayers().length) {
+    currentMap.fitBounds(group.getBounds(), {
+      padding: [30, 30],
+      maxZoom: 15,
+    });
+  }
+
+  setTimeout(() => currentMap.invalidateSize(), 100);
+  setTimeout(() => currentMap.invalidateSize(), 500);
+}
+
+
 function renderResultsCard(sparqlResults, elapsed) {
   const bindings = (sparqlResults.results && sparqlResults.results.bindings) ? sparqlResults.results.bindings : [];
   const vars = (sparqlResults.head && sparqlResults.head.vars) ? sparqlResults.head.vars : [];
@@ -1467,6 +1839,7 @@ function renderResultsCard(sparqlResults, elapsed) {
         </div>
 
         <div id="cardsView" class="result-cards">
+          ${renderMapCard(bindings, vars)}
           ${renderResultCards(bindings, vars)}
         </div>
 
@@ -1583,6 +1956,7 @@ async function ask() {
     if (loadingCards.length) loadingCards[loadingCards.length - 1].remove();
 
     content.insertAdjacentHTML('beforeend', renderResultsCard(sparqlResults, elapsed));
+    initResultMap(lastBindings, lastVars);
 
     updatePipeline(3);
     content.insertAdjacentHTML('beforeend', loadingCard('Antwoord formuleren', 'Resultaten omzetten naar een leesbaar antwoord…', 'green'));

@@ -40,6 +40,32 @@ GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-pro")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
+
+def active_api_key() -> str:
+    """Geef de API-key van de actieve provider terug; Ollama heeft geen key."""
+    provider = LLM_PROVIDER.strip().lower()
+    if provider == "ollama":
+        return ""
+    if provider == "google":
+        return GOOGLE_API_KEY
+    if provider == "anthropic":
+        return ANTHROPIC_API_KEY
+    raise EnvironmentError(
+        "Ongeldige LLM_PROVIDER. Gebruik 'ollama', 'google' of 'anthropic'."
+    )
+
+
+def require_active_api_key() -> str:
+    """Valideer de cloudprovider en bijbehorende API-key."""
+    provider = LLM_PROVIDER.strip().lower()
+    value = active_api_key()
+    if provider == "ollama":
+        return ""
+    if not value:
+        key = "GOOGLE_API_KEY" if provider == "google" else "ANTHROPIC_API_KEY"
+        raise EnvironmentError(f"Omgevingsvariabele '{key}' is niet ingesteld.")
+    return value
+
 SPARQL_PREFIXES = """\
 PREFIX ceo: <https://linkeddata.cultureelerfgoed.nl/def/ceo#>
 PREFIX graph: <https://linkeddata.cultureelerfgoed.nl/graph/>

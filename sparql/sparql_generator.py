@@ -54,7 +54,7 @@ def _build_system_prompt(mode: str) -> str:
 def _generate_anthropic(question: str, system_prompt: str) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=config.require_active_api_key())
 
     message = client.messages.create(
         model=config.ANTHROPIC_MODEL,
@@ -69,7 +69,7 @@ def _generate_anthropic(question: str, system_prompt: str) -> str:
 def _generate_google(question: str, system_prompt: str) -> str:
     import google.generativeai as genai
 
-    genai.configure(api_key=config.GOOGLE_API_KEY)
+    genai.configure(api_key=config.require_active_api_key())
 
     model = genai.GenerativeModel(
         model_name=config.GOOGLE_MODEL,

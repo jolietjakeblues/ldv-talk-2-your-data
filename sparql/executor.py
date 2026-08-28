@@ -8,6 +8,7 @@ Verantwoordelijkheden:
 """
 
 import logging
+import re
 from typing import Any
 
 import requests
@@ -17,6 +18,19 @@ from config import SPARQL_ENDPOINT, PROVINCIE_NAAM
 logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 30
+
+
+def _validate_read_query(query: str) -> None:
+    """Sta alleen SPARQL-leesqueries toe."""
+    without_comments = re.sub(r"(?m)^\s*#[^\r\n]*", "", query)
+    without_prefixes = re.sub(
+        r"^\s*(?:PREFIX\s+\w*:\s*<[^>]+>\s*)+",
+        "",
+        without_comments,
+        flags=re.IGNORECASE,
+    )
+    if not re.match(r"^\s*(SELECT|ASK)\b", without_prefixes, re.IGNORECASE):
+        raise ValueError("Alleen SELECT- en ASK-queries zijn toegestaan")
 
 
 def execute(query: str) -> dict[str, Any]:
@@ -30,6 +44,7 @@ def execute(query: str) -> dict[str, Any]:
         requests.exceptions.Timeout: Bij timeout.
         requests.exceptions.HTTPError: Bij HTTP-fouten.
     """
+    _validate_read_query(query)
     logger.info("Query uitvoeren op %s", SPARQL_ENDPOINT)
 
     response = requests.get(
