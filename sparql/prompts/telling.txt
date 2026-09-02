@@ -52,7 +52,7 @@ SELECT ?kenmerk (COUNT(DISTINCT ?hoofdobject) AS ?aantal)
 
 GEMEENTE EN PROVINCIE:
 - Gebruik voor niet-archeologische objecten (bv. rijksmonumenten) bij gemeentevragen ceo:heeftGemeente met de opgeloste OWMS-URI (zie BASISREGISTRATIE EN LOCATIE in datamodel_rules.txt). Gebruik BRK/gemeentenaam alleen als terugvaloptie zonder opgeloste URI.
-- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen altijd BAG/woonplaatsnaam, nooit ceo:heeftGemeente: die wijst naar de huidige gemeente na eventuele herindeling, terwijl een vraag vaak de oude, lokale plaatsnaam gebruikt (bv. Nuth, dat in 2019 opging in Beekdaelen).
+- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen een UNION van ceo:heeftGemeente (opgeloste URI) én BAG/woonplaatsnaam (CONTAINS/LCASE): de genoemde plaats kan zowel een huidige gemeente zijn (bv. Beekdaelen) als een voormalige gemeente/dorpsnaam die alleen nog via woonplaatsnaam te vinden is (bv. Nuth, dat in 2019 in Beekdaelen opging). Gebruik COUNT(DISTINCT ?hoofdobject) — die dedupliceert automatisch als een object via beide takken matcht.
 - Gebruik BAG/woonplaatsnaam bij niet-archeologische objecten alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
 - Gebruik bij provincievragen de provincie-URI via ceo:heeftBasisregistratieRelatie.
 - Gebruik nooit ?rm ceo:heeftProvincie.
@@ -78,7 +78,7 @@ ROMEINSE VONDSTEN:
 - Gebruik datering via ceo:heeftGebeurtenis en ceo:heeftDatering.
 - Zoek periode via skos:prefLabel.
 - Filter op "romeinse" met CONTAINS.
-- Gebruik bij plaatsvragen altijd de locatie van de vondstlocatie via BAG/woonplaatsnaam (zie GEMEENTE EN PROVINCIE hierboven) — ook als de vraag het woord "gemeente" gebruikt, want de genoemde plaats is vaak een voormalige gemeente die niet meer als zodanig in de data staat.
+- Gebruik bij plaatsvragen de UNION van ceo:heeftGemeente en BAG/woonplaatsnaam uit GEMEENTE EN PROVINCIE hierboven — niet alleen woonplaatsnaam, want de plaats kan ook een huidige gemeente zijn.
 
 GEOMETRISCHE TELLINGEN:
 - Gebruik geof:sfWithin of geof:sfIntersects alleen bij ruimtelijke relaties.

@@ -159,17 +159,30 @@ ceo:heeftGemeente wijst naar de HUIDIGE gemeente, ook als de brondata over
 een gebeurtenis van vóór een herindeling gaat. Een voormalige gemeentenaam
 (bv. Nuth, dat in 2019 opging in Beekdaelen) heeft in de RCE-data dus geen
 ceo:heeftGemeente-match meer, ook al bestaat de OWMS-URI voor die naam nog
-gewoon. BAG/woonplaatsnaam behoudt wel de oude, lokale plaatsnaam. Noemt de
-vraag een plaatsnaam die een dorp/voormalige gemeente kan zijn in plaats van
-een huidige gemeente (dit is bij archeologische objecten — vondsten,
-vondstlocaties, grondsporen, archeologische terreinen/complexen/
-onderzoeksgebieden — het gebruikelijke geval), gebruik dan BAG/woonplaatsnaam
-met CONTAINS/LCASE in plaats van ceo:heeftGemeente:
+gewoon. BAG/woonplaatsnaam behoudt wel de oude, lokale plaatsnaam.
 
-?cho ceo:heeftBasisregistratieRelatie ?relatie .
-?relatie ceo:heeftBAGRelatie ?bag .
-?bag ceo:woonplaatsnaam ?woonplaats .
-FILTER(CONTAINS(LCASE(STR(?woonplaats)), "zoekterm"))
+Bij archeologische objecten (vondsten, vondstlocaties, grondsporen,
+archeologische terreinen/complexen/onderzoeksgebieden) kan een genoemde
+plaats zowel een HUIDIGE gemeente zijn (bv. Beekdaelen — ceo:heeftGemeente
+werkt daar prima voor) als een voormalige gemeente of dorpsnaam (bv. Nuth —
+alleen te vinden via BAG/woonplaatsnaam). Je weet vooraf niet welke van de
+twee de gebruiker bedoelt, dus combineer ze met een UNION zodat beide
+kunnen matchen:
+
+{
+  ?cho ceo:heeftBasisregistratieRelatie ?relatie .
+  ?relatie ceo:heeftGemeente <GEMEENTE_URI> .
+}
+UNION
+{
+  ?cho ceo:heeftBasisregistratieRelatie ?relatie .
+  ?relatie ceo:heeftBAGRelatie ?bag .
+  ?bag ceo:woonplaatsnaam ?woonplaats .
+  FILTER(CONTAINS(LCASE(STR(?woonplaats)), "zoekterm"))
+}
+
+Is er geen opgeloste gemeente-URI beschikbaar, gebruik dan alleen het
+BAG/woonplaatsnaam-blok (met de zoekterm uit de vraag).
 
 Is er geen opgeloste URI beschikbaar (bv. beschrijvende of onduidelijke
 plaatsnaam) en moet je op naam filteren? Gebruik dan als terugvaloptie

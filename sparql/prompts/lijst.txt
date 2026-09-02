@@ -55,7 +55,7 @@ SELECT-RICHTLIJNEN:
 
 GEMEENTE EN PROVINCIE:
 - Gebruik voor niet-archeologische objecten (bv. rijksmonumenten) bij gemeentevragen ceo:heeftGemeente met de opgeloste OWMS-URI (zie BASISREGISTRATIE EN LOCATIE in datamodel_rules.txt). Gebruik BRK/gemeentenaam alleen als terugvaloptie zonder opgeloste URI.
-- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen altijd BAG/woonplaatsnaam, ook als de vraag het woord "gemeente" gebruikt: ceo:heeftGemeente wijst naar de huidige gemeente na eventuele herindeling, terwijl de genoemde plaats vaak een voormalige gemeente is die niet meer als zodanig in de data staat (bv. Nuth, dat in 2019 opging in Beekdaelen).
+- Gebruik voor archeologische objecten (vondsten, vondstlocaties, grondsporen, archeologische terreinen/complexen/onderzoeksgebieden) bij plaatsvragen een UNION van ceo:heeftGemeente (opgeloste URI) én BAG/woonplaatsnaam (CONTAINS/LCASE): de genoemde plaats kan zowel een huidige gemeente zijn (bv. Beekdaelen) als een voormalige gemeente/dorpsnaam die alleen nog via woonplaatsnaam te vinden is (bv. Nuth, dat in 2019 in Beekdaelen opging). Zie GEMEENTE EN ADRES/UNION-patroon in datamodel_rules.txt.
 - Gebruik BAG/woonplaatsnaam bij niet-archeologische objecten alleen als de gebruiker expliciet naar woonplaats, adres of straat vraagt.
 - Gebruik bij provincievragen de provincie-URI via ceo:heeftBasisregistratieRelatie.
 - Gebruik nooit ?rm ceo:heeftProvincie.

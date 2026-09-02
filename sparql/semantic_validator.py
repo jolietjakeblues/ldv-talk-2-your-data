@@ -16,11 +16,12 @@ def requested_limit(question: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-# Archeologische classes: ceo:heeftGemeente wijst naar de HUIDIGE gemeente,
-# terwijl vragen over deze objecten vaak een voormalige gemeente of
-# dorpsnaam noemen (bv. Nuth, dat in 2019 opging in Beekdaelen). Voor deze
-# classes is BAG/woonplaatsnaam het juiste pad, niet de opgeloste
-# gemeente-URI (zie GEMEENTE EN PROVINCIE in lijst.txt/telling.txt).
+# Archeologische classes: een genoemde plaats kan hier zowel een HUIDIGE
+# gemeente zijn (ceo:heeftGemeente werkt daarvoor) als een voormalige
+# gemeente/dorpsnaam die alleen nog via BAG/woonplaatsnaam te vinden is
+# (bv. Nuth, dat in 2019 opging in Beekdaelen). Vereist daarom een UNION van
+# beide paden in plaats van gemeente verplicht te maken (zie GEMEENTE EN
+# PROVINCIE in lijst.txt/telling.txt).
 ARCHAEOLOGICAL_CLASS_MARKERS = (
     "ceo:vondsten", "ceo:vondstlocatie", "ceo:grondsporen",
     "ceo:archeologischcomplex", "ceo:archeologischterrein",
@@ -40,12 +41,17 @@ def validate_semantics(question: str, query: str, terms: list[ResolvedTerm]) -> 
 
     for term in terms:
         if term.kind == "gemeente" and archaeological:
-            if "ceo:heeftgemeente" in lowered and "woonplaatsnaam" not in lowered:
+            has_gemeente_uri = f"<{term.uri}>" in query
+            has_woonplaats = "woonplaatsnaam" in lowered
+            if not (has_gemeente_uri and has_woonplaats):
                 errors.append(
-                    "Dit is een archeologische vraag met een plaatsnaam; gebruik "
-                    "BAG/woonplaatsnaam in plaats van ceo:heeftGemeente. De "
-                    "genoemde plaats kan een voormalige gemeente zijn die na een "
-                    "herindeling niet meer als zodanig in de data staat."
+                    "Dit is een archeologische vraag met een plaatsnaam. De "
+                    "genoemde plaats kan zowel een huidige gemeente als een "
+                    "voormalige gemeente/dorpsnaam zijn (bv. Nuth, opgegaan in "
+                    "Beekdaelen) — je weet vooraf niet welke. Gebruik een UNION "
+                    f"die beide combineert: ceo:heeftGemeente <{term.uri}> ÉN "
+                    "BAG/woonplaatsnaam CONTAINS/LCASE, zodat de vraag werkt "
+                    "ongeacht welke van de twee de gebruiker bedoelt."
                 )
             continue
 
