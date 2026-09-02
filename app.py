@@ -195,12 +195,13 @@ def execute_sparql():
     if error:
         return error
     query = str(data.get("query") or "").strip()
+    question = str(data.get("question") or "").strip()
 
     if not query:
         return jsonify({"error": "Geen query opgegeven"}), 400
 
     try:
-        results = sparql_executor.execute(query)
+        results = sparql_executor.execute(query, question=question)
         return jsonify(results)
 
     except ValueError as exc:

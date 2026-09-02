@@ -1358,7 +1358,7 @@ async function runEditedSparql() {
   `);
 
   try {
-    const sparqlResults = await postJSON('/execute-sparql', {query: query});
+    const sparqlResults = await postJSON('/execute-sparql', {query: query, question: lastQuestion});
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
     const card = document.getElementById('manualResultsCard');
@@ -2230,7 +2230,7 @@ async function ask() {
     updatePipeline(2);
     content.insertAdjacentHTML('beforeend', loadingCard('Endpoint bevragen', 'Query uitvoeren op het RCE SPARQL endpoint…', 'gold'));
 
-    const sparqlResults = await postJSON('/execute-sparql', {query: sparqlQuery});
+    const sparqlResults = await postJSON('/execute-sparql', {query: sparqlQuery, question: q});
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
     const loadingCards = content.querySelectorAll('.card');

@@ -62,6 +62,20 @@ def validate_semantics(question: str, query: str, terms: list[ResolvedTerm]) -> 
     limit = requested_limit(question)
     if limit is not None and not re.search(rf"\bLIMIT\s+{limit}\b", query, re.IGNORECASE):
         errors.append(f"De gebruiker vraagt exact {limit} resultaten; gebruik LIMIT {limit}.")
+
+    asks_name = bool(re.search(r"\bna(?:am|men)\b", question, re.IGNORECASE))
+    asks_address = bool(re.search(r"\badres(?:sen)?\b", question, re.IGNORECASE))
+    if limit is not None and "?rm" in query and (asks_name or asks_address):
+        exists_count = query.upper().count("FILTER EXISTS")
+        if asks_name and exists_count < 1:
+            errors.append("Gebruik FILTER EXISTS om alleen monumenten met een naam te selecteren.")
+        if asks_address and exists_count < (2 if asks_name else 1):
+            errors.append("Gebruik een apart FILTER EXISTS voor een BAG-adres.")
+        select_part = re.split(r"\bWHERE\b", query, maxsplit=1, flags=re.IGNORECASE)[0]
+        if asks_name and re.search(r"\?naam\b", select_part, re.IGNORECASE):
+            errors.append("Projecteer ?naam niet; de backend verrijkt de begrensde URI-set.")
+        if asks_address and re.search(r"\?adres\b", select_part, re.IGNORECASE):
+            errors.append("Projecteer ?adres niet; de backend verrijkt de begrensde URI-set.")
     return errors
 
 

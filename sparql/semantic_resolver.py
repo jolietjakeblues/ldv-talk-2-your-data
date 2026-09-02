@@ -28,7 +28,8 @@ class ResolvedTerm:
 def _normalise(value: str) -> str:
     value = unicodedata.normalize("NFKD", value)
     value = "".join(char for char in value if not unicodedata.combining(char))
-    return re.sub(r"\s+", " ", value.casefold()).strip()
+    value = re.sub(r"[^\w-]+", " ", value.casefold(), flags=re.UNICODE)
+    return re.sub(r"\s+", " ", value).strip()
 
 
 @lru_cache(maxsize=4)
@@ -70,18 +71,30 @@ def _find_longest(question: str, terms: tuple[tuple[str, str], ...]) -> tuple[st
 
 
 def resolve_question(question: str) -> list[ResolvedTerm]:
-    """Resolveer gemeente of provincie uit de vraag; faal veilig bij endpointproblemen."""
+    """Resolveer een plaatslabel naar een gemeentelijke of provinciale OWMS-URI."""
     q = _normalise(question)
-    kind, class_uri = (
-        ("provincie", OWMS_PROVINCIE_CLASS)
-        if "provincie" in q
-        else ("gemeente", OWMS_GEMEENTE_CLASS)
-    )
     try:
-        match = _find_longest(question, _load_owms_terms(class_uri))
+        matches = {
+            "gemeente": _find_longest(question, _load_owms_terms(OWMS_GEMEENTE_CLASS)),
+            "provincie": _find_longest(question, _load_owms_terms(OWMS_PROVINCIE_CLASS)),
+        }
     except requests.RequestException as exc:
-        logger.warning("OWMS-resolutie mislukt voor %s: %s", kind, exc)
-        return []
+        raise RuntimeError("OWMS-resolutie via het RCE endpoint is mislukt") from exc
+
+    if "provincie" in q:
+        kind = "provincie"
+    elif "gemeente" in q:
+        kind = "gemeente"
+    else:
+        available = [(candidate, match) for candidate, match in matches.items() if match]
+        if not available:
+            return []
+        kind, _ = max(
+            available,
+            key=lambda item: (len(_normalise(item[1][0])), item[0] == "gemeente"),
+        )
+
+    match = matches[kind]
     if not match:
         return []
     label, uri = match

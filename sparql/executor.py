@@ -21,6 +21,10 @@ from sparql import spatial
 logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 30
+MAX_ENRICHMENT_OBJECTS = 100
+_RM_URI_RE = re.compile(
+    r"^https://linkeddata\.cultureelerfgoed\.nl/cho-kennis/id/rijksmonument/\d+$"
+)
 
 # Endpointfouten die duiden op een probleem met de ruimtelijke berekening
 # zelf (ongeldige geometrie, JTS-topologiefout) in plaats van een fout in
@@ -68,7 +72,7 @@ def is_spatial_error(exc: Exception) -> bool:
     return False
 
 
-def execute(query: str) -> dict[str, Any]:
+def execute(query: str, question: str = "") -> dict[str, Any]:
     """
     Voer een SPARQL query uit op het RCE endpoint.
 
@@ -118,7 +122,7 @@ def execute(query: str) -> dict[str, Any]:
     if original != deduped:
         logger.info("Deduplicatie: %d → %d rijen", original, deduped)
 
-    return data
+    return _enrich_requested_fields(data, question)
 
 
 def _translate_provincie_uris(data: dict) -> dict:
@@ -167,4 +171,80 @@ def _deduplicate(data: dict[str, Any]) -> dict[str, Any]:
             deduped.append(row)
 
     data["results"]["bindings"] = deduped
+    return data
+
+
+def _enrichment_query(uris: list[str], field: str) -> str:
+    values = "\n".join(f"<{uri}>" for uri in uris)
+    if field == "naam":
+        pattern = """
+    ?rm ceo:heeftNaam ?naamNode .
+    ?naamNode ceo:naam ?value .
+"""
+    elif field == "adres":
+        pattern = """
+    ?rm ceo:heeftBasisregistratieRelatie ?relatie .
+    ?relatie ceo:heeftBAGRelatie ?bag .
+    ?bag ceo:volledigAdres ?value .
+"""
+    else:
+        raise ValueError(f"Onbekend verrijkingsveld: {field}")
+
+    return f"""PREFIX graph: <https://linkeddata.cultureelerfgoed.nl/graph/>
+PREFIX ceo: <https://linkeddata.cultureelerfgoed.nl/def/ceo#>
+SELECT ?rm (SAMPLE(?value) AS ?{field})
+WHERE {{
+  VALUES ?rm {{
+    {values}
+  }}
+  GRAPH graph:instanties-rce {{{pattern}  }}
+}}
+GROUP BY ?rm"""
+
+
+def _fetch_enrichment(uris: list[str], field: str) -> dict[str, dict[str, str]]:
+    result = _run(_enrichment_query(uris, field))
+    return {
+        row["rm"]["value"]: row[field]
+        for row in result.get("results", {}).get("bindings", [])
+        if row.get("rm", {}).get("value") and row.get(field, {}).get("value")
+    }
+
+
+def _enrich_requested_fields(data: dict[str, Any], question: str) -> dict[str, Any]:
+    bindings = data.get("results", {}).get("bindings", [])
+    vars_ = data.get("head", {}).get("vars", [])
+    if not bindings or "rm" not in vars_ or not question:
+        return data
+
+    fields = []
+    if re.search(r"\bna(?:am|men)\b", question, re.IGNORECASE):
+        fields.append("naam")
+    if re.search(r"\badres(?:sen)?\b", question, re.IGNORECASE):
+        fields.append("adres")
+    if not fields:
+        return data
+
+    uris = []
+    for row in bindings:
+        uri = row.get("rm", {}).get("value", "")
+        if _RM_URI_RE.fullmatch(uri) and uri not in uris:
+            uris.append(uri)
+        if len(uris) >= MAX_ENRICHMENT_OBJECTS:
+            break
+    if not uris:
+        return data
+
+    for field in fields:
+        try:
+            values = _fetch_enrichment(uris, field)
+        except requests.RequestException as exc:
+            logger.warning("Verrijking van %s mislukt: %s", field, exc)
+            continue
+        for row in bindings:
+            uri = row.get("rm", {}).get("value", "")
+            if uri in values:
+                row[field] = values[uri]
+        if field not in vars_:
+            vars_.append(field)
     return data
