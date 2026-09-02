@@ -72,9 +72,10 @@ class SemanticValidatorTests(unittest.TestCase):
         errors = validate_semantics("... Amsterdam?", query, self.terms)
         self.assertEqual(errors, [])
 
-    def test_archaeological_query_with_heeftgemeente_is_rejected(self):
-        # ceo:heeftGemeente wijst naar de HUIDIGE gemeente; voormalige
-        # gemeenten (bv. Nuth, opgegaan in Beekdaelen) matchen dan niet.
+    def test_archaeological_query_with_only_heeftgemeente_is_rejected(self):
+        # Werkt alleen voor een HUIDIGE gemeentenaam (bv. Beekdaelen); een
+        # voormalige gemeente/dorpsnaam (bv. Nuth) matcht dan niet, en de
+        # query weet niet vooraf welke van de twee de gebruiker bedoelt.
         terms = [
             ResolvedTerm(
                 kind="gemeente",
@@ -91,7 +92,9 @@ class SemanticValidatorTests(unittest.TestCase):
         errors = validate_semantics("Welke romeinse vondsten liggen in Nuth?", query, terms)
         self.assertTrue(errors)
 
-    def test_archaeological_query_with_woonplaatsnaam_passes(self):
+    def test_archaeological_query_with_only_woonplaatsnaam_is_rejected(self):
+        # Werkt alleen voor een voormalige/dorpsnaam; mist een huidige
+        # gemeentenaam zoals Beekdaelen.
         terms = [
             ResolvedTerm(
                 kind="gemeente",
@@ -106,6 +109,28 @@ class SemanticValidatorTests(unittest.TestCase):
             "?relatie ceo:heeftBAGRelatie ?bag . "
             "?bag ceo:woonplaatsnaam ?woonplaats . "
             'FILTER(CONTAINS(LCASE(STR(?woonplaats)), "nuth"))'
+        )
+        errors = validate_semantics("Welke romeinse vondsten liggen in Nuth?", query, terms)
+        self.assertTrue(errors)
+
+    def test_archaeological_query_with_union_of_both_passes(self):
+        terms = [
+            ResolvedTerm(
+                kind="gemeente",
+                label="Nuth",
+                uri="http://standaarden.overheid.nl/owms/terms/Nuth_(gemeente)",
+            )
+        ]
+        query = (
+            "?vondst a ceo:Vondsten . ?vondst ceo:ligtInObject ?locatie . "
+            "?locatie a ceo:Vondstlocatie . "
+            "{ ?locatie ceo:heeftBasisregistratieRelatie ?relatie . "
+            "?relatie ceo:heeftGemeente <http://standaarden.overheid.nl/owms/terms/Nuth_(gemeente)> . } "
+            "UNION "
+            "{ ?locatie ceo:heeftBasisregistratieRelatie ?relatie . "
+            "?relatie ceo:heeftBAGRelatie ?bag . "
+            "?bag ceo:woonplaatsnaam ?woonplaats . "
+            'FILTER(CONTAINS(LCASE(STR(?woonplaats)), "nuth")) }'
         )
         errors = validate_semantics("Welke romeinse vondsten liggen in Nuth?", query, terms)
         self.assertEqual(errors, [])
