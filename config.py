@@ -31,10 +31,19 @@ def _require(key: str) -> str:
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
+_LEGACY_SPARQL_ENDPOINT = (
+    "https://api.linkeddata.cultureelerfgoed.nl/"
+    "datasets/rce/cho/services/cho/sparql"
+)
+_DEFAULT_SPARQL_ENDPOINT = (
+    "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/cho/sparql"
+)
 SPARQL_ENDPOINT = os.getenv(
     "SPARQL_ENDPOINT",
-    "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/cho/sparql",
-)
+    _DEFAULT_SPARQL_ENDPOINT,
+).strip().rstrip("/")
+if SPARQL_ENDPOINT == _LEGACY_SPARQL_ENDPOINT:
+    SPARQL_ENDPOINT = _DEFAULT_SPARQL_ENDPOINT
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-1.5-pro")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
