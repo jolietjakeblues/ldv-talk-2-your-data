@@ -204,6 +204,36 @@ Adres en woonplaats lopen via BAGRelatie:
 OPTIONAL { ?bag ceo:woonplaatsnaam ?woonplaats . }
 OPTIONAL { ?bag ceo:volledigAdres ?adres . }
 
+NAAM/ADRES BIJ EEN EXPLICIET AANTAL RIJKSMONUMENTEN
+
+Vraagt de gebruiker om een expliciet aantal rijksmonumenten (bv. "geef 5
+rijksmonumenten in Amsterdam met naam en adres") mét naam en/of adres? Doe
+dan NIET zelf een OPTIONAL/SAMPLE-join voor naam of adres. De backend vult
+die velden na uitvoering automatisch aan (?rm moet dan wel in SELECT staan)
+op basis van de bevraagde vraagtekst. Zorg in plaats daarvan dat het
+gevraagde aantal ?rm's ook echt een naam/adres heeft, met een aparte
+FILTER EXISTS per gevraagd veld, en projecteer ?naam/?adres zelf niet:
+
+SELECT DISTINCT ?rm ?nummer WHERE {
+  ?rm a ceo:Rijksmonument .
+  ?rm ceo:rijksmonumentnummer ?nummer .
+  ?rm ceo:heeftBasisregistratieRelatie ?relatie .
+  ?relatie ceo:heeftGemeente <GEMEENTE_URI> .
+  FILTER EXISTS {
+    ?rm ceo:heeftNaam ?naamNode .
+    ?naamNode ceo:naam ?naamCheck .
+  }
+  FILTER EXISTS {
+    ?rm ceo:heeftBasisregistratieRelatie ?relatie .
+    ?relatie ceo:heeftBAGRelatie ?bag .
+    ?bag ceo:volledigAdres ?adresCheck .
+  }
+}
+LIMIT 5
+
+Vraagt de gebruiker niet om een specifiek aantal, of vraagt niet om naam of
+adres, gebruik dan gewoon de normale OPTIONAL-paden hierboven.
+
 MEERDERE MULTI-VALUED PADEN SAMEN (bv. BRK + BAG)
 
 ceo:heeftBRKRelatie (percelen) en ceo:heeftBAGRelatie/volledigAdres (adressen)
