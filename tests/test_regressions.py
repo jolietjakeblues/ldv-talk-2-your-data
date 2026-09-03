@@ -136,6 +136,58 @@ class SemanticValidatorTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+class RetryTests(unittest.TestCase):
+    """Eén automatische herkansing bij een tijdelijke opstartvertraging
+    (bv. het RCE-endpoint of een tussenliggende proxy na inactiviteit)."""
+
+    def test_timeout_succeeds_on_retry(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+        calls = {"n": 0}
+        success = {
+            "head": {"vars": ["rm"]},
+            "results": {"bindings": [{"rm": {"value": "http://x/1"}}]},
+        }
+
+        def fake_run(_query):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise requests.exceptions.Timeout("opstartvertraging")
+            return success
+
+        with patch.object(sparql_executor, "_run", side_effect=fake_run), \
+                patch("time.sleep", lambda _s: None):
+            result = sparql_executor.execute(query)
+
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(len(result["results"]["bindings"]), 1)
+
+    def test_persistent_timeout_is_reraised_after_retry(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+
+        def always_timeout(_query):
+            raise requests.exceptions.Timeout("blijvend")
+
+        with patch.object(sparql_executor, "_run", side_effect=always_timeout), \
+                patch("time.sleep", lambda _s: None):
+            with self.assertRaises(requests.exceptions.Timeout):
+                sparql_executor.execute(query)
+
+    def test_non_retryable_http_error_is_not_retried(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+        calls = {"n": 0}
+
+        def bad_request(_query):
+            calls["n"] += 1
+            response = MagicMock(status_code=400)
+            raise requests.exceptions.HTTPError(response=response)
+
+        with patch.object(sparql_executor, "_run", side_effect=bad_request):
+            with self.assertRaises(requests.exceptions.HTTPError):
+                sparql_executor.execute(query)
+
+        self.assertEqual(calls["n"], 1)
+
+
 class SpatialFallbackTests(unittest.TestCase):
     def test_self_intersecting_polygon_is_repaired(self):
         bowtie = "POLYGON((0 0, 2 2, 2 0, 0 2, 0 0))"
