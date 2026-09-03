@@ -134,7 +134,12 @@ def generate(question: str, mode: str) -> str:
 
     system_prompt = _build_system_prompt(mode)
 
-    resolved_terms = resolve_question(question)
+    try:
+        resolved_terms = resolve_question(question)
+    except RuntimeError as exc:
+        logger.warning("Gemeente/provincie-resolutie overgeslagen: %s", exc)
+        resolved_terms = []
+
     semantic_context = build_semantic_context(resolved_terms)
     prompt_input = f"{question}\n\n{semantic_context}" if semantic_context else question
 

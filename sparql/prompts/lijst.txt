@@ -52,6 +52,7 @@ SELECT-RICHTLIJNEN:
 - Bij werelderfgoed: ?werelderfgoed ?werelderfgoednummer ?naam.
 - Bij archeologische objecten: hoofdobject, objectnummer, locatienaam, woonplaats, typeLabel, materiaalLabel, periodeLabel en ?wkt als geometrie beschikbaar is.
 - Gebruik ORDER BY alleen als de gebruiker vraagt om sortering, nieuwste, oudste, grootste, meeste, minste of top.
+- Uitzondering op "?naam"/"?adres" hierboven: vraagt de gebruiker om een expliciet aantal rijksmonumenten mét naam en/of adres (bv. "geef 5 ... met naam en adres")? Volg dan het FILTER EXISTS-patroon uit "NAAM/ADRES BIJ EEN EXPLICIET AANTAL RIJKSMONUMENTEN" in datamodel_rules.txt, en projecteer ?naam/?adres dan juist niet — de backend vult die na uitvoering aan.
 
 GEMEENTE EN PROVINCIE:
 - Gebruik voor niet-archeologische objecten (bv. rijksmonumenten) bij gemeentevragen ceo:heeftGemeente met de opgeloste OWMS-URI (zie BASISREGISTRATIE EN LOCATIE in datamodel_rules.txt). Gebruik BRK/gemeentenaam alleen als terugvaloptie zonder opgeloste URI.
