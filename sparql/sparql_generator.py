@@ -10,10 +10,15 @@ import config
 from sparql.postprocess import postprocess, has_count
 from sparql.semantic_resolver import build_semantic_context, resolve_question
 from sparql.semantic_validator import validate_completeness, validate_semantics
+from sparql.syntax_validator import validate_syntax
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+class SparqlSyntaxInvalid(Exception):
+    """Ook na één correctiepoging nog geen grammaticaal geldige SPARQL."""
 
 
 def _load_prompt(name: str) -> str:
@@ -165,7 +170,8 @@ def generate(question: str, mode: str) -> str:
 
     semantic_errors = validate_semantics(question, query, resolved_terms)
     completeness_errors = validate_completeness(question, query)
-    all_errors = semantic_errors + completeness_errors
+    syntax_errors = validate_syntax(query)
+    all_errors = semantic_errors + completeness_errors + syntax_errors
 
     if all_errors:
         logger.warning("Validatie gaf correcties: %s", all_errors)
@@ -178,6 +184,12 @@ def generate(question: str, mode: str) -> str:
 
         query = _generate(corrected, system_prompt)
         query = postprocess(query, mode)
+
+        # Deterministisch, geen netwerk-/LLM-kosten -- voorkomt dat een nog
+        # steeds syntactisch kapotte query naar het RCE-endpoint gaat.
+        remaining_syntax_errors = validate_syntax(query)
+        if remaining_syntax_errors:
+            raise SparqlSyntaxInvalid(remaining_syntax_errors[0])
 
     logger.info("Query gegenereerd (%d tekens)", len(query))
 
