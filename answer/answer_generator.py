@@ -548,17 +548,20 @@ def generate(question: str, results: dict[str, Any]) -> str:
     bindings = _bindings(results)
 
     if not results:
-        return "Er zijn geen SPARQL-resultaten ontvangen."
+        answer = "Er zijn geen SPARQL-resultaten ontvangen."
+    elif not bindings:
+        answer = "Ik vond geen resultaten voor deze vraag. Probeer eventueel een bredere vraag of controleer de gegenereerde SPARQL-query."
+    elif _is_count_result(vars_, bindings):
+        answer = _summarize_count(question, results)
+    else:
+        geospatial_summary = _summarize_geospatial_list(question, vars_, bindings)
+        answer = geospatial_summary or _summarize_generic_list(question, vars_, bindings)
 
-    if not bindings:
-        return "Ik vond geen resultaten voor deze vraag. Probeer eventueel een bredere vraag of controleer de gegenereerde SPARQL-query."
+    if results.get("incomplete_due_to_limit"):
+        answer += (
+            "\n\nLet op: de ruimtelijke berekening moest terugvallen op een lokale "
+            "benadering en het kandidaatveld raakte daarbij een bovengrens — dit "
+            "resultaat kan onvolledig zijn."
+        )
 
-    if _is_count_result(vars_, bindings):
-        return _summarize_count(question, results)
-
-    geospatial_summary = _summarize_geospatial_list(question, vars_, bindings)
-
-    if geospatial_summary:
-        return geospatial_summary
-
-    return _summarize_generic_list(question, vars_, bindings)
+    return answer

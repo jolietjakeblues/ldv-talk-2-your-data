@@ -10,6 +10,7 @@ import config
 from answer import answer_generator
 from sparql import executor as sparql_executor
 from sparql import spatial
+from sparql import sparql_generator
 from sparql.executor import _validate_read_query
 from sparql.postprocess import inject_prefixes
 from sparql.semantic_resolver import ResolvedTerm, _find_longest
@@ -220,6 +221,21 @@ class SpatialFallbackTests(unittest.TestCase):
         kept = [row["rm"]["value"] for row in result["results"]["bindings"]]
         self.assertEqual(kept, ["http://x/rm/1"])
 
+    def test_widen_limit_raises_low_limit_to_cap(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument } LIMIT 20"
+        widened = spatial.widen_limit(query, cap=10_000)
+        self.assertIn("LIMIT 10000", widened)
+        self.assertNotIn("LIMIT 20", widened)
+
+    def test_widen_limit_leaves_limit_at_or_above_cap_untouched(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument } LIMIT 10000"
+        self.assertEqual(spatial.widen_limit(query, cap=10_000), query)
+
+    def test_widen_limit_adds_limit_when_absent(self):
+        query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+        widened = spatial.widen_limit(query, cap=10_000)
+        self.assertIn("LIMIT 10000", widened)
+
     def test_executor_falls_back_to_local_join_on_topology_exception(self):
         query = (
             "SELECT ?rm ?rmWkt ?gezicht ?gezichtWkt WHERE { "
@@ -252,6 +268,40 @@ class SpatialFallbackTests(unittest.TestCase):
         self.assertEqual(calls["n"], 2)
         self.assertEqual(len(result["results"]["bindings"]), 1)
 
+    def test_fallback_flags_incomplete_when_candidate_set_hits_cap(self):
+        query = (
+            "SELECT ?rm ?rmWkt ?gezicht ?gezichtWkt WHERE { "
+            "FILTER(geof:sfWithin(?rmWkt, ?gezichtWkt)) } LIMIT 20"
+        )
+        cap = 25  # groter dan de oorspronkelijke LIMIT 20, anders wordt er niets verbreed
+        row = {
+            "rm": {"value": "http://x/rm/1"},
+            "rmWkt": {"value": "POINT(5.05 52.1)"},
+            "gezicht": {"value": "http://x/gz/1"},
+            "gezichtWkt": {"value": "POLYGON((5 52, 5 52.2, 5.1 52.2, 5.1 52, 5 52))"},
+        }
+        # precies `cap` rijen terug -- het kandidaatveld raakte de bovengrens
+        capped_json = {
+            "head": {"vars": ["rm", "rmWkt", "gezicht", "gezichtWkt"]},
+            "results": {"bindings": [row] * cap},
+        }
+        captured_queries = []
+
+        def fake_run(query):
+            captured_queries.append(query)
+            if len(captured_queries) == 1:
+                response = MagicMock()
+                response.text = "TopologyException: side location conflict"
+                raise requests.exceptions.HTTPError(response=response)
+            return capped_json
+
+        with patch.object(sparql_executor, "_run", side_effect=fake_run), \
+                patch.object(spatial, "FALLBACK_LIMIT", cap):
+            result = sparql_executor.execute(query)
+
+        self.assertTrue(result.get("incomplete_due_to_limit"))
+        self.assertIn(f"LIMIT {cap}", captured_queries[1])
+
     def test_executor_reraises_non_spatial_http_error(self):
         query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
 
@@ -265,6 +315,36 @@ class SpatialFallbackTests(unittest.TestCase):
                 sparql_executor.execute(query)
 
 
+class SparqlGeneratorSyntaxTests(unittest.TestCase):
+    def test_still_invalid_after_retry_raises_syntax_invalid(self):
+        # De "correctie"-aanroep levert hier weer een query zonder PREFIX op
+        # -- syntactisch ongeldig, en dat blijft zo na de ene herkansing.
+        broken_query = "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+
+        with patch.object(sparql_generator, "resolve_question", return_value=[]), \
+                patch.object(sparql_generator, "_generate", return_value=broken_query), \
+                patch.object(sparql_generator, "postprocess", side_effect=lambda q, mode: q), \
+                patch.object(sparql_generator, "validate_semantics", return_value=[]), \
+                patch.object(sparql_generator, "validate_completeness", return_value=[]):
+            with self.assertRaises(sparql_generator.SparqlSyntaxInvalid):
+                sparql_generator.generate("Hoeveel rijksmonumenten zijn er?", "telling")
+
+    def test_valid_query_never_raises_syntax_invalid(self):
+        valid_query = (
+            "PREFIX ceo: <https://linkeddata.cultureelerfgoed.nl/def/ceo#> "
+            "SELECT ?rm WHERE { ?rm a ceo:Rijksmonument }"
+        )
+
+        with patch.object(sparql_generator, "resolve_question", return_value=[]), \
+                patch.object(sparql_generator, "_generate", return_value=valid_query), \
+                patch.object(sparql_generator, "postprocess", side_effect=lambda q, mode: q), \
+                patch.object(sparql_generator, "validate_semantics", return_value=[]), \
+                patch.object(sparql_generator, "validate_completeness", return_value=[]):
+            query = sparql_generator.generate("Hoeveel rijksmonumenten zijn er?", "telling")
+
+        self.assertEqual(query, valid_query)
+
+
 class AnswerTests(unittest.TestCase):
     def test_count_uses_sparql_value(self):
         results = {
@@ -274,6 +354,27 @@ class AnswerTests(unittest.TestCase):
             ]},
         }
         self.assertIn("6331", answer_generator.generate("Hoeveel?", results))
+
+    def test_incomplete_flag_is_surfaced_in_answer(self):
+        results = {
+            "head": {"vars": ["aantal"]},
+            "results": {"bindings": [
+                {"aantal": {"type": "literal", "value": "25"}}
+            ]},
+            "incomplete_due_to_limit": True,
+        }
+        answer = answer_generator.generate("Hoeveel?", results)
+        self.assertIn("25", answer)
+        self.assertIn("onvolledig", answer)
+
+    def test_no_incomplete_flag_leaves_answer_unchanged(self):
+        results = {
+            "head": {"vars": ["aantal"]},
+            "results": {"bindings": [
+                {"aantal": {"type": "literal", "value": "25"}}
+            ]},
+        }
+        self.assertNotIn("onvolledig", answer_generator.generate("Hoeveel?", results))
 
 
 class ApiTests(unittest.TestCase):
